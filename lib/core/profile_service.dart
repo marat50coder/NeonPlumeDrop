@@ -33,6 +33,7 @@ class ProfileService extends ChangeNotifier {
 
   String selectedSectorId = 'deep_neon_space';
   Set<String> unlockedSectorIds = {'deep_neon_space'};
+  Set<String> unlockedMedalIds = {};
 
   Map<String, int> upgradeLevels = {};
 
@@ -58,6 +59,9 @@ class ProfileService extends ChangeNotifier {
       // simply won't survive a restart, which beats refusing to start.
     }
     _ensureDailyChallenge();
+    if (_syncTimeMedalsFromBest()) {
+      await _persist();
+    }
     _ready = true;
     notifyListeners();
   }
@@ -81,42 +85,48 @@ class ProfileService extends ChangeNotifier {
   }
 
   Map<String, dynamic> _toJson() => {
-        'neonEnergy': neonEnergy,
-        'crystalShards': crystalShards,
-        'bestSurvivalSeconds': bestSurvivalSeconds,
-        'bestPhaseIndex1': bestPhaseIndex1,
-        'bestNeonEnergyRun': bestNeonEnergyRun,
-        'bestCrystalShardsRun': bestCrystalShardsRun,
-        'totalRuns': totalRuns,
-        'criticalCollapseClears': criticalCollapseClears,
-        'selectedBallId': selectedBallId,
-        'unlockedBallIds': unlockedBallIds.toList(),
-        'selectedSectorId': selectedSectorId,
-        'unlockedSectorIds': unlockedSectorIds.toList(),
-        'upgradeLevels': upgradeLevels,
-        'sfxVolume': sfxVolume,
-        'vibrationEnabled': vibrationEnabled,
-        'tutorialCompleted': tutorialCompleted,
-        'dailyChallenge': dailyChallenge?.toJson(),
-      };
+    'neonEnergy': neonEnergy,
+    'crystalShards': crystalShards,
+    'bestSurvivalSeconds': bestSurvivalSeconds,
+    'bestPhaseIndex1': bestPhaseIndex1,
+    'bestNeonEnergyRun': bestNeonEnergyRun,
+    'bestCrystalShardsRun': bestCrystalShardsRun,
+    'totalRuns': totalRuns,
+    'criticalCollapseClears': criticalCollapseClears,
+    'selectedBallId': selectedBallId,
+    'unlockedBallIds': unlockedBallIds.toList(),
+    'selectedSectorId': selectedSectorId,
+    'unlockedSectorIds': unlockedSectorIds.toList(),
+    'unlockedMedalIds': unlockedMedalIds.toList(),
+    'upgradeLevels': upgradeLevels,
+    'sfxVolume': sfxVolume,
+    'vibrationEnabled': vibrationEnabled,
+    'tutorialCompleted': tutorialCompleted,
+    'dailyChallenge': dailyChallenge?.toJson(),
+  };
 
   void _fromJson(Map<String, dynamic> json) {
     neonEnergy = json['neonEnergy'] as int? ?? 0;
     crystalShards = json['crystalShards'] as int? ?? 0;
-    bestSurvivalSeconds = (json['bestSurvivalSeconds'] as num?)?.toDouble() ?? 0;
+    bestSurvivalSeconds =
+        (json['bestSurvivalSeconds'] as num?)?.toDouble() ?? 0;
     bestPhaseIndex1 = json['bestPhaseIndex1'] as int? ?? 0;
     bestNeonEnergyRun = json['bestNeonEnergyRun'] as int? ?? 0;
     bestCrystalShardsRun = json['bestCrystalShardsRun'] as int? ?? 0;
     totalRuns = json['totalRuns'] as int? ?? 0;
     criticalCollapseClears = json['criticalCollapseClears'] as int? ?? 0;
     selectedBallId = json['selectedBallId'] as String? ?? 'cyan_pulse';
-    unlockedBallIds = ((json['unlockedBallIds'] as List?)?.cast<String>() ??
-            ['cyan_pulse'])
-        .toSet();
+    unlockedBallIds =
+        ((json['unlockedBallIds'] as List?)?.cast<String>() ?? ['cyan_pulse'])
+            .toSet();
     selectedSectorId = json['selectedSectorId'] as String? ?? 'deep_neon_space';
     unlockedSectorIds =
         ((json['unlockedSectorIds'] as List?)?.cast<String>() ??
                 ['deep_neon_space'])
+            .toSet();
+    unlockedMedalIds =
+        ((json['unlockedMedalIds'] as List?)?.cast<String>() ??
+                const <String>[])
             .toSet();
     upgradeLevels = Map<String, int>.from(
       (json['upgradeLevels'] as Map?)?.cast<String, dynamic>() ?? {},
@@ -225,9 +235,20 @@ class ProfileService extends ChangeNotifier {
     }
   }
 
+  /// Grants time medals already earned by [bestSurvivalSeconds], so a player
+  /// who survived a minute before this update still finds Neon Orbit unlocked.
+  bool _syncTimeMedalsFromBest() {
+    final before = unlockedMedalIds.length;
+    for (final medal in TimeMedal.earnedBy(bestSurvivalSeconds)) {
+      unlockedMedalIds.add(medal.id);
+    }
+    return unlockedMedalIds.length > before;
+  }
+
   /// Applies the outcome of a finished run: currencies, records and unlocks.
   /// Returns whether new best records were set (used by the result screen).
-  Future<({bool newTime, bool newPhase})> applyRunResult({
+  Future<({bool newTime, bool newPhase, List<TimeMedal> newMedals})>
+  applyRunResult({
     required double survivalSeconds,
     required int phaseIndex1,
     required int neonEnergyEarned,
@@ -243,7 +264,9 @@ class ProfileService extends ChangeNotifier {
     final newPhase = phaseIndex1 > bestPhaseIndex1;
     if (newPhase) bestPhaseIndex1 = phaseIndex1;
 
-    if (neonEnergyEarned > bestNeonEnergyRun) bestNeonEnergyRun = neonEnergyEarned;
+    if (neonEnergyEarned > bestNeonEnergyRun) {
+      bestNeonEnergyRun = neonEnergyEarned;
+    }
     if (crystalShardsEarned > bestCrystalShardsRun) {
       bestCrystalShardsRun = crystalShardsEarned;
     }
@@ -261,14 +284,20 @@ class ProfileService extends ChangeNotifier {
       final needsTwoClears = sector.id == 'holographic_cosmos';
       final requirementMet = needsTwoClears
           ? criticalCollapseClears >= 2
-          : (sector.unlockBestPhase > 0 && bestPhaseIndex1 >= sector.unlockBestPhase);
+          : (sector.unlockBestPhase > 0 &&
+                bestPhaseIndex1 >= sector.unlockBestPhase);
       if (requirementMet && !unlockedSectorIds.contains(sector.id)) {
         unlockedSectorIds.add(sector.id);
       }
     }
 
+    final newlyEarned = <TimeMedal>[];
+    for (final medal in TimeMedal.earnedBy(survivalSeconds)) {
+      if (unlockedMedalIds.add(medal.id)) newlyEarned.add(medal);
+    }
+
     await _persist();
     notifyListeners();
-    return (newTime: newTime, newPhase: newPhase);
+    return (newTime: newTime, newPhase: newPhase, newMedals: newlyEarned);
   }
 }

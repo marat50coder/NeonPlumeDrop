@@ -112,32 +112,53 @@ class _GameScreenState extends State<GameScreen>
           Haptics.selection();
           break;
         case GameSfxEvent.collectEnergy:
-          AudioService.instance.playSfx(GameAssets.sfxCollectEnergy, volumeScale: 0.95);
+          AudioService.instance.playSfx(
+            GameAssets.sfxCollectEnergy,
+            volumeScale: 0.95,
+          );
           break;
         case GameSfxEvent.collectRare:
-          AudioService.instance.playSfx(GameAssets.sfxCollectEnergy, volumeScale: 0.95);
+          AudioService.instance.playSfx(
+            GameAssets.sfxCollectEnergy,
+            volumeScale: 0.95,
+          );
           Haptics.light();
           break;
         case GameSfxEvent.gateActivate:
-          AudioService.instance.playSfx(GameAssets.sfxCollectEnergy, volumeScale: 0.95);
+          AudioService.instance.playSfx(
+            GameAssets.sfxCollectEnergy,
+            volumeScale: 0.95,
+          );
           break;
         case GameSfxEvent.shieldActivate:
           AudioService.instance.playSfx(GameAssets.sfxShieldActivation);
           Haptics.medium();
           break;
         case GameSfxEvent.collision:
-          AudioService.instance.playSfx(GameAssets.sfxCollision, volumeScale: 0.45);
+          AudioService.instance.playSfx(
+            GameAssets.sfxCollision,
+            volumeScale: 0.45,
+          );
           Haptics.heavy();
           break;
         case GameSfxEvent.dangerWarning:
-          AudioService.instance.playSfx(GameAssets.sfxDangerWarning, volumeScale: 0.65);
+          AudioService.instance.playSfx(
+            GameAssets.sfxDangerWarning,
+            volumeScale: 0.65,
+          );
           break;
         case GameSfxEvent.sectorPortal:
-          AudioService.instance.playSfx(GameAssets.sfxCollectEnergy, volumeScale: 0.95);
+          AudioService.instance.playSfx(
+            GameAssets.sfxCollectEnergy,
+            volumeScale: 0.95,
+          );
           Haptics.medium();
           break;
         case GameSfxEvent.defeat:
-          AudioService.instance.playSfx(GameAssets.sfxDefeat, volumeScale: 0.32);
+          AudioService.instance.playSfx(
+            GameAssets.sfxDefeat,
+            volumeScale: 0.32,
+          );
           break;
       }
     }
@@ -167,7 +188,7 @@ class _GameScreenState extends State<GameScreen>
       dailyDone = !wasComplete && (profile.dailyChallenge?.isComplete ?? false);
     }
 
-    if (result.newTime || result.newPhase) {
+    if (result.newTime || result.newPhase || result.newMedals.isNotEmpty) {
       AudioService.instance.playSfx(GameAssets.sfxVictory);
     } else {
       AudioService.instance.playSfx(GameAssets.sfxScreenTransition);
@@ -183,6 +204,7 @@ class _GameScreenState extends State<GameScreen>
       gatesActivated: stats.gatesActivated,
       isNewBestTime: result.newTime,
       isNewBestPhase: result.newPhase,
+      newlyUnlockedMedals: result.newMedals,
     );
 
     Navigator.of(context).pushReplacement(
@@ -210,9 +232,9 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _restart() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const GameScreen()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const GameScreen()));
   }
 
   void _exitToMenu() {
@@ -241,7 +263,8 @@ class _GameScreenState extends State<GameScreen>
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final side = constraints.maxWidth < constraints.maxHeight
+                        final side =
+                            constraints.maxWidth < constraints.maxHeight
                             ? constraints.maxWidth
                             : constraints.maxHeight;
                         return Stack(

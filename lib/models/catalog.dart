@@ -11,9 +11,9 @@ class SpriteRef {
 
   /// A sheet holding a single sprite.
   const SpriteRef.single(this.asset)
-      : grid = SpriteGrids.single,
-        column = 0,
-        row = 0;
+    : grid = SpriteGrids.single,
+      column = 0,
+      row = 0;
 
   final String asset;
   final SpriteGrid grid;
@@ -286,4 +286,62 @@ class GameCatalog {
 
   static UpgradeDef upgradeById(UpgradeId id) =>
       upgrades.firstWhere((u) => u.id == id);
+}
+
+/// Survival-time badges shown in Collection. Cosmetic only — they do not
+/// change run modifiers.
+class TimeMedal {
+  const TimeMedal({
+    required this.id,
+    required this.name,
+    required this.seconds,
+    required this.accent,
+    required this.unlockDescription,
+  });
+
+  final String id;
+  final String name;
+  final int seconds;
+  final ui.Color accent;
+  final String unlockDescription;
+
+  String get formattedTime {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  static const List<TimeMedal> all = [
+    TimeMedal(
+      id: 'spark_circuit',
+      name: 'Spark Circuit',
+      seconds: 30,
+      accent: ui.Color(0xFF3DEFFF),
+      unlockDescription: 'Survive 00:30 in a single run.',
+    ),
+    TimeMedal(
+      id: 'neon_orbit',
+      name: 'Neon Orbit',
+      seconds: 60,
+      accent: ui.Color(0xFF33FFB0),
+      unlockDescription: 'Survive 01:00 in a single run.',
+    ),
+    TimeMedal(
+      id: 'deep_surge',
+      name: 'Deep Surge',
+      seconds: 90,
+      accent: ui.Color(0xFFFFC85C),
+      unlockDescription: 'Survive 01:30 in a single run.',
+    ),
+    TimeMedal(
+      id: 'collapse_crown',
+      name: 'Collapse Crown',
+      seconds: 120,
+      accent: ui.Color(0xFFFF4FD8),
+      unlockDescription: 'Survive 02:00 in a single run.',
+    ),
+  ];
+
+  static List<TimeMedal> earnedBy(double survivalSeconds) =>
+      all.where((m) => survivalSeconds >= m.seconds).toList();
 }

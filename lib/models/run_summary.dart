@@ -1,4 +1,5 @@
 import '../core/game_balance.dart';
+import 'catalog.dart';
 
 class RunSummary {
   RunSummary({
@@ -9,6 +10,7 @@ class RunSummary {
     required this.gatesActivated,
     required this.isNewBestTime,
     required this.isNewBestPhase,
+    this.newlyUnlockedMedals = const [],
   });
 
   final double survivalSeconds;
@@ -18,6 +20,7 @@ class RunSummary {
   final int gatesActivated;
   final bool isNewBestTime;
   final bool isNewBestPhase;
+  final List<TimeMedal> newlyUnlockedMedals;
 
   String get formattedTime {
     final total = survivalSeconds.round();

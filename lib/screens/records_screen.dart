@@ -21,12 +21,43 @@ class RecordsScreen extends StatelessWidget {
         : 'Not set yet';
 
     final stats = <(String, String, IconData, Color)>[
-      ('Best Survival Time', _formatTime(profile.bestSurvivalSeconds), Icons.timer_rounded, NeonColors.cyan),
+      (
+        'Best Survival Time',
+        _formatTime(profile.bestSurvivalSeconds),
+        Icons.timer_rounded,
+        NeonColors.cyan,
+      ),
       ('Best Phase Reached', bestPhase, Icons.bolt_rounded, NeonColors.magenta),
-      ('Best Neon Energy (1 run)', '${profile.bestNeonEnergyRun}', Icons.blur_circular_rounded, NeonColors.deepBlue),
-      ('Best Crystal Shards (1 run)', '${profile.bestCrystalShardsRun}', Icons.diamond_rounded, NeonColors.violet),
-      ('Critical Collapse Clears', '${profile.criticalCollapseClears}', Icons.warning_amber_rounded, NeonColors.danger),
-      ('Total Runs Played', '${profile.totalRuns}', Icons.replay_rounded, NeonColors.emerald),
+      (
+        'Best Neon Energy (1 run)',
+        '${profile.bestNeonEnergyRun}',
+        Icons.blur_circular_rounded,
+        NeonColors.deepBlue,
+      ),
+      (
+        'Best Crystal Shards (1 run)',
+        '${profile.bestCrystalShardsRun}',
+        Icons.diamond_rounded,
+        NeonColors.violet,
+      ),
+      (
+        'Critical Collapse Clears',
+        '${profile.criticalCollapseClears}',
+        Icons.warning_amber_rounded,
+        NeonColors.danger,
+      ),
+      (
+        'Time Medals',
+        '${profile.unlockedMedalIds.length} / ${TimeMedal.all.length}',
+        Icons.military_tech_rounded,
+        NeonColors.gold,
+      ),
+      (
+        'Total Runs Played',
+        '${profile.totalRuns}',
+        Icons.replay_rounded,
+        NeonColors.emerald,
+      ),
     ];
 
     return MenuScaffold(
@@ -56,14 +87,27 @@ class RecordsScreen extends StatelessWidget {
               itemBuilder: (context, i) {
                 final (label, value, icon, color) = stats[i];
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: NeonColors.neonPanel(color: color, opacity: 0.35),
                   child: Row(
                     children: [
                       Icon(icon, color: color, size: 22),
                       const SizedBox(width: 14),
-                      Expanded(child: Text(label, style: NeonTextStyles.body.copyWith(color: Colors.white))),
-                      Text(value, style: NeonTextStyles.stat(size: 16, color: color)),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: NeonTextStyles.body.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        value,
+                        style: NeonTextStyles.stat(size: 16, color: color),
+                      ),
                     ],
                   ),
                 );

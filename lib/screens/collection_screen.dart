@@ -7,6 +7,7 @@ import '../game/play_sprites.dart';
 import '../models/catalog.dart';
 import '../widgets/menu_scaffold.dart';
 import '../widgets/sprite_image.dart';
+import '../widgets/time_medal_badge.dart';
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});
@@ -15,8 +16,9 @@ class CollectionScreen extends StatefulWidget {
   State<CollectionScreen> createState() => _CollectionScreenState();
 }
 
-class _CollectionScreenState extends State<CollectionScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 3, vsync: this);
+class _CollectionScreenState extends State<CollectionScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tab = TabController(length: 4, vsync: this);
 
   @override
   void dispose() {
@@ -37,6 +39,8 @@ class _CollectionScreenState extends State<CollectionScreen> with SingleTickerPr
         children: [
           TabBar(
             controller: _tab,
+            isScrollable: true,
+            tabAlignment: TabAlignment.center,
             indicatorColor: NeonColors.cyan,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white54,
@@ -45,6 +49,7 @@ class _CollectionScreenState extends State<CollectionScreen> with SingleTickerPr
               Tab(text: 'BALLS'),
               Tab(text: 'SECTORS'),
               Tab(text: 'ARTIFACTS'),
+              Tab(text: 'MEDALS'),
             ],
           ),
           const SizedBox(height: 12),
@@ -55,6 +60,7 @@ class _CollectionScreenState extends State<CollectionScreen> with SingleTickerPr
                 _BallsGrid(profile: profile),
                 _SectorsGrid(profile: profile),
                 _ArtifactsGrid(profile: profile),
+                _MedalsGrid(profile: profile),
               ],
             ),
           ),
@@ -115,7 +121,11 @@ class _SectorsGrid extends StatelessWidget {
           lockHint: s.unlockDescription,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: Image.asset(s.background, fit: BoxFit.cover, cacheWidth: 320),
+            child: Image.asset(
+              s.background,
+              fit: BoxFit.cover,
+              cacheWidth: 320,
+            ),
           ),
         );
       },
@@ -139,13 +149,42 @@ class _ArtifactsGrid extends StatelessWidget {
       ),
       itemBuilder: (context, i) {
         final item = ArtifactCatalog.items[i];
-        final unlocked = item.unlockBestPhase == 0 ||
+        final unlocked =
+            item.unlockBestPhase == 0 ||
             profile.bestPhaseIndex1 >= item.unlockBestPhase;
         return _CollectionCard(
           label: item.name,
           unlocked: unlocked,
           lockHint: item.unlockDescription,
           child: SpriteImage(ref: item.sprite),
+        );
+      },
+    );
+  }
+}
+
+class _MedalsGrid extends StatelessWidget {
+  const _MedalsGrid({required this.profile});
+  final ProfileService profile;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      itemCount: TimeMedal.all.length,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: adaptiveColumns(context),
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.85,
+      ),
+      itemBuilder: (context, i) {
+        final medal = TimeMedal.all[i];
+        final unlocked = profile.unlockedMedalIds.contains(medal.id);
+        return _CollectionCard(
+          label: medal.name,
+          unlocked: unlocked,
+          lockHint: medal.unlockDescription,
+          child: TimeMedalBadge(medal: medal),
         );
       },
     );
@@ -182,8 +221,9 @@ class _CollectionCard extends StatelessWidget {
     return GestureDetector(
       onTap: unlocked
           ? null
-          : () => ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(lockHint))),
+          : () => ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(lockHint))),
       child: Container(
         decoration: NeonColors.neonPanel(
           color: unlocked ? NeonColors.cyan : Colors.white24,
@@ -211,7 +251,11 @@ class _CollectionCard extends StatelessWidget {
             if (!unlocked)
               const Padding(
                 padding: EdgeInsets.only(top: 2),
-                child: Icon(Icons.lock_rounded, size: 14, color: Colors.white38),
+                child: Icon(
+                  Icons.lock_rounded,
+                  size: 14,
+                  color: Colors.white38,
+                ),
               ),
           ],
         ),
