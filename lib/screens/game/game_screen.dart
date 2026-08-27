@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../core/analytics_service.dart';
 import '../../core/audio_service.dart';
 import '../../core/game_assets.dart';
 import '../../core/haptics.dart';
@@ -172,6 +173,11 @@ class _GameScreenState extends State<GameScreen>
       phaseIndex1: stats.phaseIndex1,
       neonEnergyEarned: stats.neonEnergyEarned,
       crystalShardsEarned: stats.crystalShardsEarned,
+    );
+    await AnalyticsService.instance.logRunComplete(
+      survivalSeconds: stats.survivalSeconds,
+      phaseIndex1: stats.phaseIndex1,
+      neonEnergyEarned: stats.neonEnergyEarned,
     );
 
     bool dailyDone = false;

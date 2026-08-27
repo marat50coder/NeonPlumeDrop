@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../core/audio_service.dart';
+import '../core/avatar_service.dart';
+import '../core/notification_service.dart';
 import '../core/profile_service.dart';
 import '../core/theme.dart';
 import '../models/catalog.dart';
 import '../widgets/menu_scaffold.dart';
+import '../widgets/player_avatar.dart';
 import 'tutorial_screen.dart';
 import 'webview_screen.dart';
 
-const String kPrivacyPolicyUrl = 'https://neonplumedrop.com/privacy-policy.html';
+const String kPrivacyPolicyUrl =
+    'https://neonplumedrop.com/privacy-policy.html';
 const String kSupportUrl = 'https://neonplumedrop.com/support.html';
 
 class SettingsScreen extends StatelessWidget {
@@ -27,6 +32,16 @@ class SettingsScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.only(top: 6, bottom: 24),
         children: [
+          _SectionLabel('PROFILE'),
+          _Panel(
+            children: [
+              _AvatarRow(
+                imagePath: profile.avatarPath,
+                onChange: () => _pickAvatar(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
           _SectionLabel('AUDIO & HAPTICS'),
           _Panel(
             children: [
@@ -47,6 +62,18 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
+          _SectionLabel('ALERTS'),
+          _Panel(
+            children: [
+              _SwitchRow(
+                icon: Icons.notifications_rounded,
+                label: 'Daily reminder',
+                value: profile.notificationsEnabled,
+                onChanged: (v) => _setNotifications(context, v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
           _SectionLabel('GAME'),
           _Panel(
             children: [
@@ -54,7 +81,9 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.school_rounded,
                 label: 'How to Play',
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const TutorialScreen(startOfGame: false)),
+                  MaterialPageRoute(
+                    builder: (_) => const TutorialScreen(startOfGame: false),
+                  ),
                 ),
               ),
             ],
@@ -93,10 +122,138 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Center(
             child: Text(
-              'Neon Plume Drop v1.0.0',
-              style: NeonTextStyles.body.copyWith(color: Colors.white38, fontSize: 12),
+              'Neon Plume Drop v1.0.2',
+              style: NeonTextStyles.body.copyWith(
+                color: Colors.white38,
+                fontSize: 12,
+              ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setNotifications(BuildContext context, bool enabled) async {
+    if (enabled) {
+      final ok = await NotificationService.instance.enableDailyReminder();
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notifications are turned off for this app.'),
+          ),
+        );
+      }
+    } else {
+      await NotificationService.instance.disable();
+    }
+  }
+
+  Future<void> _pickAvatar(BuildContext context) async {
+    final profile = ProfileService.instance;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: NeonColors.panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Player avatar', style: NeonTextStyles.heading(size: 18)),
+                const SizedBox(height: 16),
+                _ActionRow(
+                  icon: Icons.photo_camera_rounded,
+                  label: 'Take photo',
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _tryPick(context, ImageSource.camera);
+                  },
+                ),
+                const Divider(color: Colors.white12, height: 24),
+                _ActionRow(
+                  icon: Icons.photo_library_rounded,
+                  label: 'Choose from gallery',
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _tryPick(context, ImageSource.gallery);
+                  },
+                ),
+                if (profile.avatarPath != null) ...[
+                  const Divider(color: Colors.white12, height: 24),
+                  _ActionRow(
+                    icon: Icons.delete_outline_rounded,
+                    label: 'Remove avatar',
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      await AvatarService.clear();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _tryPick(BuildContext context, ImageSource source) async {
+    try {
+      await AvatarService.pickAndSave(source);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            source == ImageSource.camera
+                ? 'Camera is not available on this device.'
+                : 'Could not open the photo library.',
+          ),
+        ),
+      );
+    }
+  }
+}
+
+class _AvatarRow extends StatelessWidget {
+  const _AvatarRow({required this.imagePath, required this.onChange});
+
+  final String? imagePath;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onChange,
+      child: Row(
+        children: [
+          PlayerAvatar(size: 64, imagePath: imagePath),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your avatar',
+                  style: NeonTextStyles.body.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Camera or photo library',
+                  style: NeonTextStyles.body.copyWith(
+                    color: Colors.white54,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.edit_rounded, color: Colors.white38, size: 20),
         ],
       ),
     );
@@ -111,7 +268,10 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 6, bottom: 8),
-      child: Text(text, style: NeonTextStyles.label.copyWith(color: NeonColors.cyan)),
+      child: Text(
+        text,
+        style: NeonTextStyles.label.copyWith(color: NeonColors.cyan),
+      ),
     );
   }
 }
@@ -153,7 +313,10 @@ class _SliderRow extends StatelessWidget {
         const SizedBox(width: 12),
         SizedBox(
           width: 92,
-          child: Text(label, style: NeonTextStyles.body.copyWith(color: Colors.white)),
+          child: Text(
+            label,
+            style: NeonTextStyles.body.copyWith(color: Colors.white),
+          ),
         ),
         Expanded(
           child: SliderTheme(
@@ -197,15 +360,28 @@ class _SwitchRow extends StatelessWidget {
       children: [
         Icon(icon, color: Colors.white70, size: 20),
         const SizedBox(width: 12),
-        Expanded(child: Text(label, style: NeonTextStyles.body.copyWith(color: Colors.white))),
-        Switch(value: value, activeThumbColor: NeonColors.cyan, onChanged: onChanged),
+        Expanded(
+          child: Text(
+            label,
+            style: NeonTextStyles.body.copyWith(color: Colors.white),
+          ),
+        ),
+        Switch(
+          value: value,
+          activeThumbColor: NeonColors.cyan,
+          onChanged: onChanged,
+        ),
       ],
     );
   }
 }
 
 class _ActionRow extends StatelessWidget {
-  const _ActionRow({required this.icon, required this.label, required this.onTap});
+  const _ActionRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
@@ -219,7 +395,12 @@ class _ActionRow extends StatelessWidget {
         children: [
           Icon(icon, color: Colors.white70, size: 20),
           const SizedBox(width: 12),
-          Expanded(child: Text(label, style: NeonTextStyles.body.copyWith(color: Colors.white))),
+          Expanded(
+            child: Text(
+              label,
+              style: NeonTextStyles.body.copyWith(color: Colors.white),
+            ),
+          ),
           const Icon(Icons.chevron_right_rounded, color: Colors.white38),
         ],
       ),

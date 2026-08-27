@@ -14,6 +14,7 @@ import '../models/catalog.dart';
 import '../widgets/currency_pill.dart';
 import '../widgets/menu_scaffold.dart';
 import '../widgets/neon_button.dart';
+import '../widgets/player_avatar.dart';
 import '../widgets/sprite_image.dart';
 import 'ball_select_screen.dart';
 import 'collection_screen.dart';
@@ -47,7 +48,9 @@ class _MainMenuScreenState extends State<MainMenuScreen>
       final profile = ProfileService.instance;
       if (!profile.tutorialCompleted) {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const TutorialScreen(startOfGame: true)),
+          MaterialPageRoute(
+            builder: (_) => const TutorialScreen(startOfGame: true),
+          ),
         );
       }
     });
@@ -93,11 +96,20 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                   ],
                 ),
               ),
+              PlayerAvatar(
+                size: 44,
+                imagePath: profile.avatarPath,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
+              ),
+              const SizedBox(width: 10),
               NeonIconButton(
                 icon: Icons.settings_rounded,
                 semanticLabel: 'Settings',
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
               ),
             ],
           ),
@@ -111,7 +123,10 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                 children: [
                   Hero(
                     tag: 'game-logo',
-                    child: Image.asset(GameAssets.gameLogo, width: isTablet(context) ? 280 : 240),
+                    child: Image.asset(
+                      GameAssets.gameLogo,
+                      width: isTablet(context) ? 280 : 240,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   AnimatedBuilder(
@@ -144,9 +159,9 @@ class _MainMenuScreenState extends State<MainMenuScreen>
             label: 'PLAY',
             icon: Icons.play_arrow_rounded,
             fullWidth: true,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const GameScreen()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const GameScreen())),
           ),
           const SizedBox(height: 12),
           _MenuGrid(profile: profile),
@@ -174,19 +189,43 @@ class _MenuGrid extends StatelessWidget {
     final dailyReady = dc != null && dc.isComplete && !dc.claimed;
 
     final items = <_MenuItem>[
-      _MenuItem('Energy Ball', Icons.blur_circular_rounded, NeonColors.cyan,
-          (ctx) => const BallSelectScreen()),
-      _MenuItem('Upgrades', Icons.upgrade_rounded, NeonColors.violet,
-          (ctx) => const UpgradesScreen()),
-      _MenuItem('Sectors', Icons.public_rounded, NeonColors.magenta,
-          (ctx) => const SectorSelectScreen()),
-      _MenuItem('Collection', Icons.auto_awesome_rounded, NeonColors.emerald,
-          (ctx) => const CollectionScreen()),
-      _MenuItem('Daily Task', Icons.today_rounded, NeonColors.gold,
-          (ctx) => const DailyChallengeScreen(),
-          badge: dailyReady),
-      _MenuItem('Records', Icons.emoji_events_rounded, NeonColors.deepBlue,
-          (ctx) => const RecordsScreen()),
+      _MenuItem(
+        'Energy Ball',
+        Icons.blur_circular_rounded,
+        NeonColors.cyan,
+        (ctx) => const BallSelectScreen(),
+      ),
+      _MenuItem(
+        'Upgrades',
+        Icons.upgrade_rounded,
+        NeonColors.violet,
+        (ctx) => const UpgradesScreen(),
+      ),
+      _MenuItem(
+        'Sectors',
+        Icons.public_rounded,
+        NeonColors.magenta,
+        (ctx) => const SectorSelectScreen(),
+      ),
+      _MenuItem(
+        'Collection',
+        Icons.auto_awesome_rounded,
+        NeonColors.emerald,
+        (ctx) => const CollectionScreen(),
+      ),
+      _MenuItem(
+        'Daily Task',
+        Icons.today_rounded,
+        NeonColors.gold,
+        (ctx) => const DailyChallengeScreen(),
+        badge: dailyReady,
+      ),
+      _MenuItem(
+        'Records',
+        Icons.emoji_events_rounded,
+        NeonColors.deepBlue,
+        (ctx) => const RecordsScreen(),
+      ),
     ];
 
     final cols = adaptiveColumns(context, phone: 3, tablet: 3);
@@ -210,7 +249,13 @@ class _MenuGrid extends StatelessWidget {
 }
 
 class _MenuItem {
-  _MenuItem(this.label, this.icon, this.color, this.builder, {this.badge = false});
+  _MenuItem(
+    this.label,
+    this.icon,
+    this.color,
+    this.builder, {
+    this.badge = false,
+  });
   final String label;
   final IconData icon;
   final Color color;

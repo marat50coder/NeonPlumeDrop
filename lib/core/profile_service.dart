@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/catalog.dart';
 import '../models/daily_challenge.dart';
+import 'attribution.dart';
 
 /// Persisted player progression: currencies, unlocks, upgrades, records and
 /// settings. A single JSON blob is stored under [_kKey] for simplicity.
@@ -34,6 +35,11 @@ class ProfileService extends ChangeNotifier {
   String selectedSectorId = 'deep_neon_space';
   Set<String> unlockedSectorIds = {'deep_neon_space'};
   Set<String> unlockedMedalIds = {};
+
+  String? avatarPath;
+  bool notificationsEnabled = true;
+
+  AttributionSnapshot attribution = AttributionSnapshot.unknown;
 
   Map<String, int> upgradeLevels = {};
 
@@ -103,6 +109,11 @@ class ProfileService extends ChangeNotifier {
     'vibrationEnabled': vibrationEnabled,
     'tutorialCompleted': tutorialCompleted,
     'dailyChallenge': dailyChallenge?.toJson(),
+    'avatarPath': avatarPath,
+    'notificationsEnabled': notificationsEnabled,
+    'attributionKind': attribution.kind.analyticsValue,
+    'attributionMediaSource': attribution.mediaSource,
+    'attributionCampaign': attribution.campaign,
   };
 
   void _fromJson(Map<String, dynamic> json) {
@@ -134,6 +145,17 @@ class ProfileService extends ChangeNotifier {
     sfxVolume = (json['sfxVolume'] as num?)?.toDouble() ?? 0.9;
     vibrationEnabled = json['vibrationEnabled'] as bool? ?? true;
     tutorialCompleted = json['tutorialCompleted'] as bool? ?? false;
+    avatarPath = json['avatarPath'] as String?;
+    notificationsEnabled = json['notificationsEnabled'] as bool? ?? true;
+    attribution = AttributionSnapshot(
+      kind: switch (json['attributionKind'] as String?) {
+        'organic' => AttributionKind.organic,
+        'non_organic' => AttributionKind.nonOrganic,
+        _ => AttributionKind.unknown,
+      },
+      mediaSource: json['attributionMediaSource'] as String? ?? '',
+      campaign: json['attributionCampaign'] as String? ?? '',
+    );
     final dc = json['dailyChallenge'];
     if (dc != null) {
       dailyChallenge = DailyChallenge.fromJson(dc as Map<String, dynamic>);
@@ -209,6 +231,25 @@ class ProfileService extends ChangeNotifier {
 
   Future<void> setTutorialCompleted(bool v) async {
     tutorialCompleted = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> setAvatarPath(String? path) async {
+    avatarPath = path;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> setNotificationsEnabled(bool v) async {
+    if (notificationsEnabled == v) return;
+    notificationsEnabled = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> setAttribution(AttributionSnapshot snapshot) async {
+    attribution = snapshot;
     await _persist();
     notifyListeners();
   }

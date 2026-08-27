@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/analytics_service.dart';
 import '../core/game_assets.dart';
 import '../core/image_loader.dart';
+import '../core/notification_service.dart';
 import '../core/orientation_controller.dart';
 import '../core/theme.dart';
 import 'main_menu_screen.dart';
@@ -40,6 +42,12 @@ class _SplashScreenState extends State<SplashScreen> {
       // must not leave the player stranded on the loading screen.
     }
     await minimumDelay;
+    try {
+      await AnalyticsService.instance.start();
+    } catch (_) {}
+    try {
+      await NotificationService.instance.syncWithProfile();
+    } catch (_) {}
     if (!mounted || _leaving) return;
     _leaving = true;
     await OrientationController.lockPortrait();
@@ -58,8 +66,9 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     final orientation = MediaQuery.orientationOf(context);
     final isPortrait = orientation == Orientation.portrait;
-    final background =
-        isPortrait ? GameAssets.loadingVertical : GameAssets.loadingHorizontal;
+    final background = isPortrait
+        ? GameAssets.loadingVertical
+        : GameAssets.loadingHorizontal;
 
     return Scaffold(
       backgroundColor: NeonColors.voidBlack,
@@ -80,7 +89,9 @@ class _SplashScreenState extends State<SplashScreen> {
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
                     builder: (context, value, _) {
-                      final pct = (value * 100).clamp(0, 100).toStringAsFixed(0);
+                      final pct = (value * 100)
+                          .clamp(0, 100)
+                          .toStringAsFixed(0);
                       return Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
