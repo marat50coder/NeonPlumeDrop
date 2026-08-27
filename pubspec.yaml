@@ -1,0 +1,66 @@
+name: neon_plume_drop
+description: "Neon Plume Drop — a neon cosmic orbit-shift survival arcade."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.5.5
+  webview_flutter: ^4.14.1
+  audioplayers: ^6.8.1
+  provider: ^6.1.5+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/Neon_Plume_Drop_additional_assets/Game_Name.webp
+    - assets/Neon_Plume_Drop_additional_assets/Vertical_Loading_Screen.webp
+    - assets/Neon_Plume_Drop_additional_assets/Horizontal_Loading_Screen.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Deep_Neon_Space_Background_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Crystal_Galaxy_Background_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Digital_Void_Background_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Prism_Nebula_Background_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Plasma_Universe_Background_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Holographic_Cosmos_Background_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Central_Energy_Cores_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Balls_Set_1_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Balls_Set_2_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Obstacles_Set_1_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Obstacles_Set_2_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Drones_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Void_Zones_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Gates_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Crystals_Set_1_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Crystals_Set_2_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Floating_Crystals_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Prism_Gates_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Colored_Energy_Routes_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Holographic_Structures_Set_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Rings_Set_2_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Rings_Set_3_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Orbital_Segments_Set_1_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Crystal_Shard_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Shield_Core_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Rare_Prism_Core_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Neon_Energy_Orb_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Energy_Charge_Capsule_asset.webp
+    - assets/Neon_Plume_Drop_gameplay_assets/Cosmic_Sector_Portal_asset.webp
+    - assets/Neon_Plume_Drop_sounds_assets/
+
+flutter_launcher_icons:
+  image_path: "assets/Neon_Plume_Drop_additional_assets/Icon.png"
+  ios: true
+  android: false
+  remove_alpha_ios: true
+  background_color_ios: "#050318"
