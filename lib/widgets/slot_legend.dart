@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
@@ -17,7 +19,7 @@ class SlotLegend extends StatelessWidget {
   final List<SlotKind> kinds;
 
   static const Map<SlotKind, String> _blurbs = {
-    SlotKind.obstacle: 'A wall across the lane. Never survivable.',
+    SlotKind.obstacle: 'A red spiked mine. Never survivable.',
     SlotKind.breach: 'The lane itself is missing. Never survivable.',
     SlotKind.cracked: 'Holds once. Crossing it leaves a breach behind you.',
     SlotKind.voidZone: 'Grabs you. Shift out before the ring closes.',
@@ -25,7 +27,7 @@ class SlotLegend extends StatelessWidget {
     SlotKind.shard: 'Rarer. Buys energy ball skins.',
     SlotKind.shield: 'An extra life. Soaks up one hit.',
     SlotKind.prism: 'A shard windfall, and a richer field for a while.',
-    SlotKind.gateEnergy: 'A big energy payout.',
+    SlotKind.gateEnergy: 'A circular portal. Big energy payout.',
     SlotKind.gateSurge: 'Faster shifts, and clears the lane around it.',
     SlotKind.gateGhost: 'Pass straight through danger for a few seconds.',
   };
@@ -151,19 +153,35 @@ class _SwatchPainter extends CustomPainter {
           );
         } else {
           drawRail();
-          final block = Rect.fromCenter(
-            center: Offset(size.width / 2, y),
-            width: size.width * 0.4,
-            height: rail * 2.6,
+          final centre = Offset(size.width / 2, y);
+          canvas.drawCircle(
+            centre,
+            rail * 2.15,
+            Paint()..color = const Color(0xFF1A0208),
           );
-          canvas.drawRect(block, Paint()..color = GameColors.danger);
-          final ribs = Paint()
-            ..color = const Color(0xFF2A0410)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = rail * 0.5;
-          for (final f in const [0.34, 0.66]) {
-            final x = block.left + block.width * f;
-            canvas.drawLine(Offset(x, block.top), Offset(x, block.bottom), ribs);
+          canvas.drawCircle(
+            centre,
+            rail * 2.15,
+            Paint()
+              ..color = GameColors.danger
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = rail * 0.55,
+          );
+          final tooth = Paint()..color = GameColors.danger;
+          for (int i = 0; i < 6; i++) {
+            final a = i * pi / 3;
+            final inner = rail * 2.0;
+            final outer = rail * 2.65;
+            canvas.drawPath(
+              Path()
+                ..moveTo(centre.dx + cos(a) * inner, centre.dy + sin(a) * inner)
+                ..lineTo(centre.dx + cos(a - 0.22) * outer,
+                    centre.dy + sin(a - 0.22) * outer)
+                ..lineTo(centre.dx + cos(a + 0.22) * outer,
+                    centre.dy + sin(a + 0.22) * outer)
+                ..close(),
+              tooth,
+            );
           }
         }
         break;
@@ -193,27 +211,20 @@ class _SwatchPainter extends CustomPainter {
 
       case SlotFamily.gate:
         drawRail();
-        final band = size.width * 0.46;
-        canvas.drawLine(
-          Offset((size.width - band) / 2, y),
-          Offset((size.width + band) / 2, y),
-          Paint()
-            ..color = style.color.withValues(alpha: 0.9)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = rail * 1.5,
+        final centre = Offset(size.width / 2, y);
+        canvas.drawCircle(
+          centre,
+          rail * 2.2,
+          Paint()..color = style.color.withValues(alpha: 0.22),
         );
-        final post = Paint()
-          ..color = style.color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = rail * 0.55
-          ..strokeCap = StrokeCap.round;
-        for (final x in [(size.width - band) / 2, (size.width + band) / 2]) {
-          canvas.drawLine(
-            Offset(x, y - rail * 1.9),
-            Offset(x, y + rail * 1.9),
-            post,
-          );
-        }
+        canvas.drawCircle(
+          centre,
+          rail * 2.2,
+          Paint()
+            ..color = style.color
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = rail * 0.55,
+        );
         break;
 
       case SlotFamily.empty:

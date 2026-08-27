@@ -30,10 +30,10 @@ T weightedPick<T>(Random rng, List<MapEntry<T, double>> weights) {
 /// How a family's share is split between its members. Fixed ratios, so the
 /// phase bands only have to decide *how much* of the field each family covers.
 const _dangerSplit = <SlotKind, double>{
-  SlotKind.obstacle: 0.34,
-  SlotKind.breach: 0.30,
-  SlotKind.cracked: 0.24,
-  SlotKind.voidZone: 0.12,
+  SlotKind.obstacle: 0.42,
+  SlotKind.breach: 0.26,
+  SlotKind.cracked: 0.18,
+  SlotKind.voidZone: 0.14,
 };
 
 const _gateSplit = <SlotKind, double>{
@@ -44,7 +44,7 @@ const _gateSplit = <SlotKind, double>{
 
 /// Baseline share of slots holding a gate. Low on purpose: gates are the
 /// moments a run turns on, and they only feel that way if they are rare.
-const double _gateDensity = 0.055;
+const double _gateDensity = 0.04;
 
 /// Rolls the content for a track slot that is about to re-enter play.
 ///
@@ -52,9 +52,9 @@ const double _gateDensity = 0.055;
 /// lanes are the greedy line: more danger, but also the only place the rarest
 /// pickups appear.
 ///
-/// The resulting field is roughly two thirds empty in Phase 1, tightening to
-/// about a third by Critical Collapse. That emptiness is the feature -- objects
-/// only read as meaningful when there is track between them.
+/// The resulting field starts mostly empty and tightens as later bands drop
+/// the empty floor. Objects only read as meaningful when there is track
+/// between them.
 TrackSlot rollSlot({
   required Random rng,
   required double innerness,
@@ -66,7 +66,12 @@ TrackSlot rollSlot({
   final pickups =
       band.pickupDensity * mods.rewardScale * (0.75 + innerness * 0.5);
   final gates = _gateDensity * mods.rewardScale;
-  final empty = max(0.10, 1.0 - danger - pickups - gates);
+  final emptyFloor = band.startSeconds >= 120
+      ? 0.16
+      : band.startSeconds >= 80
+          ? 0.22
+          : 0.32;
+  final empty = max(emptyFloor, 1.0 - danger - pickups - gates);
 
   // Pickup mix: energy is the staple, shards the currency, shields the
   // lifeline, prisms the jackpot -- and prisms only spawn on inner lanes.

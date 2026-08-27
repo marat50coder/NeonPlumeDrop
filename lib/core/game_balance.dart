@@ -6,6 +6,8 @@
 /// player at least one reachable safe lane.
 library;
 
+import 'dart:math';
+
 enum CollapsePhase { phase1, phase2, phase3, overload, criticalCollapse }
 
 extension CollapsePhaseX on CollapsePhase {
@@ -66,61 +68,105 @@ class GameBalance {
   /// built around.
   static const int slotsPerOrbit = 14;
 
-  /// Base angular speed of the ball in radians/second at Phase 1. Scaled up
-  /// alongside the drop in [slotsPerOrbit] to keep the decisions-per-second
-  /// pace of a run unchanged.
-  static const double baseAngularSpeed = 0.95;
+  /// Base angular speed of the ball in radians/second at Phase 1.
+  static const double baseAngularSpeed = 1.02;
+
+  /// How far ahead a new lethal may appear, in seconds of travel. Anything
+  /// closer would materialise on the ball or leave no time to shift.
+  static const double spawnClearanceSeconds = 0.95;
+
+  /// Minimum number of empty slots ahead of the ball on every lane.
+  static const int minSpawnAheadSlots = 4;
+
+  /// How many upcoming slots (including the current one) must stay free of
+  /// newly planted lethals, given the live [speed] in rad/s.
+  static int spawnClearanceSlots(double speed) {
+    final width = 2 * pi / slotsPerOrbit;
+    final timePerSlot = width / speed.clamp(0.35, 4.0);
+    final need = (spawnClearanceSeconds / timePerSlot).ceil();
+    return max(minSpawnAheadSlots, min(6, need));
+  }
 
   static const List<PhaseBand> bands = [
     PhaseBand(
       phase: CollapsePhase.phase1,
       startSeconds: 0,
-      speedStart: 1.0,
-      speedEnd: 1.0,
+      speedStart: 0.88,
+      speedEnd: 0.94,
       activeOrbits: 3,
-      hazardDensity: 0.13,
-      pickupDensity: 0.15,
+      hazardDensity: 0.07,
+      pickupDensity: 0.14,
       rewardMultiplier: 1.0,
     ),
     PhaseBand(
-      phase: CollapsePhase.phase2,
-      startSeconds: 35,
-      speedStart: 1.08,
-      speedEnd: 1.16,
+      phase: CollapsePhase.phase1,
+      startSeconds: 20,
+      speedStart: 0.96,
+      speedEnd: 1.04,
       activeOrbits: 3,
-      hazardDensity: 0.18,
-      pickupDensity: 0.15,
+      hazardDensity: 0.11,
+      pickupDensity: 0.13,
+      rewardMultiplier: 1.05,
+    ),
+    PhaseBand(
+      phase: CollapsePhase.phase2,
+      startSeconds: 40,
+      speedStart: 1.06,
+      speedEnd: 1.14,
+      activeOrbits: 3,
+      hazardDensity: 0.15,
+      pickupDensity: 0.12,
       rewardMultiplier: 1.15,
     ),
     PhaseBand(
-      phase: CollapsePhase.phase3,
-      startSeconds: 70,
+      phase: CollapsePhase.phase2,
+      startSeconds: 60,
       speedStart: 1.16,
-      speedEnd: 1.24,
+      speedEnd: 1.26,
       activeOrbits: 4,
-      hazardDensity: 0.23,
-      pickupDensity: 0.15,
-      rewardMultiplier: 1.3,
+      hazardDensity: 0.19,
+      pickupDensity: 0.12,
+      rewardMultiplier: 1.25,
+    ),
+    PhaseBand(
+      phase: CollapsePhase.phase3,
+      startSeconds: 80,
+      speedStart: 1.28,
+      speedEnd: 1.40,
+      activeOrbits: 4,
+      hazardDensity: 0.24,
+      pickupDensity: 0.11,
+      rewardMultiplier: 1.4,
     ),
     PhaseBand(
       phase: CollapsePhase.overload,
-      startSeconds: 105,
-      speedStart: 1.28,
-      speedEnd: 1.42,
+      startSeconds: 100,
+      speedStart: 1.44,
+      speedEnd: 1.58,
       activeOrbits: 5,
       hazardDensity: 0.29,
-      pickupDensity: 0.15,
-      rewardMultiplier: 1.55,
+      pickupDensity: 0.11,
+      rewardMultiplier: 1.6,
     ),
     PhaseBand(
       phase: CollapsePhase.criticalCollapse,
-      startSeconds: 150,
-      speedStart: 1.48,
-      speedEnd: 1.62,
+      startSeconds: 120,
+      speedStart: 1.64,
+      speedEnd: 1.82,
       activeOrbits: 5,
       hazardDensity: 0.35,
-      pickupDensity: 0.15,
+      pickupDensity: 0.10,
       rewardMultiplier: 1.9,
+    ),
+    PhaseBand(
+      phase: CollapsePhase.criticalCollapse,
+      startSeconds: 140,
+      speedStart: 1.84,
+      speedEnd: 1.98,
+      activeOrbits: 5,
+      hazardDensity: 0.40,
+      pickupDensity: 0.09,
+      rewardMultiplier: 2.2,
     ),
   ];
 
@@ -181,8 +227,7 @@ class GameBalance {
   static const double laneReflowSeconds = 1.1;
 
   static const double shiftDurationMs = 220;
-  static const double shiftInvulnerabilityMs = 140;
-  static const double voidGraceMs = 750;
+  static const double voidGraceMs = 900;
   static const double hitInvulnerabilityMs = 1100;
 
   static const int maxShields = 3;

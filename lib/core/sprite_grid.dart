@@ -24,6 +24,7 @@ class SpriteGrids {
   SpriteGrids._();
 
   static const SpriteGrid grid2x2 = SpriteGrid(2, 2);
+  static const SpriteGrid grid2x1 = SpriteGrid(2, 1);
   static const SpriteGrid stripVertical4 = SpriteGrid(1, 4);
   static const SpriteGrid single = SpriteGrid(1, 1);
 }

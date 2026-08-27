@@ -16,14 +16,12 @@ import 'slot_visuals.dart';
 /// Every family in [SlotFamily] gets its own silhouette, and nothing else may
 /// borrow it:
 ///
-///  * danger -- red. A barrier is a solid block standing on the lane, a breach
-///    is the lane physically missing between two cut rail ends, a void well is
-///    a dark pit. All three are the same red.
+///  * danger -- red spiked ring. A mine is a full circle sitting on the lane,
+///    a breach is a hole in the rail, a void well is a dark pit. All three
+///    wear the same red mark.
 ///  * warning -- amber dashes over intact lane.
-///  * pickup -- an icon floating in a soft halo, the only round glowing things
-///    on the field.
-///  * gate -- a lit doorway: two posts across the lane with the lane widened
-///    and brightened between them.
+///  * pickup -- a coloured glow with a smooth ring, never the spiked red badge.
+///  * gate -- a full circular portal with a smooth violet ring. Always a buff.
 class GamePainter extends CustomPainter {
   GamePainter({
     required this.controller,
@@ -197,7 +195,7 @@ class GamePainter extends CustomPainter {
           _drawBreach(canvas, m, radius, angle);
           break;
         case SlotKind.obstacle:
-          _drawBarrier(canvas, m, bounds, radius, angle, slotWidth, slot.variant);
+          _drawBarrier(canvas, m, radius, angle, slot.variant, t);
           break;
         case SlotKind.voidZone:
           _drawVoidWell(canvas, m, radius, angle, t, slot.variant);
@@ -213,7 +211,7 @@ class GamePainter extends CustomPainter {
         case SlotKind.gateEnergy:
         case SlotKind.gateGhost:
         case SlotKind.gateSurge:
-          _drawGate(canvas, m, radius, angle, slot.kind);
+          _drawGate(canvas, m, radius, angle, slot.kind, t);
           break;
       }
     }
@@ -248,10 +246,18 @@ class GamePainter extends CustomPainter {
 
     canvas.drawCircle(
       pos,
-      thickness * 1.3,
+      thickness * 1.55,
       Paint()
-        ..color = GameColors.danger.withValues(alpha: 0.16)
+        ..color = GameColors.danger.withValues(alpha: 0.22)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, thickness * 1.2),
+    );
+    canvas.drawCircle(
+      pos,
+      thickness * 1.15,
+      Paint()
+        ..color = GameColors.danger
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = thickness * 0.28,
     );
     // A single cross in the hole. Marking both cut ends instead put two red
     // objects on the field per breach, which made the track look twice as
@@ -270,65 +276,132 @@ class GamePainter extends CustomPainter {
     }
   }
 
-  void _drawBarrier(Canvas canvas, _Metrics m, Rect bounds, double radius,
-      double angle, double slotWidth, int variant) {
+  void _drawBarrier(
+      Canvas canvas, _Metrics m, double radius, double angle, int variant, double t) {
     final pos = m.center + Offset(cos(angle), sin(angle)) * radius;
-    final size = m.iconSize * 1.18;
-    canvas.drawCircle(
-      pos,
-      size * 0.62,
-      Paint()
-        ..color = GameColors.danger.withValues(alpha: 0.28)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.45),
+    final size = m.iconSize * 1.22;
+    _drawHazardBadge(canvas, pos, size, t);
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: pos, radius: size * 0.46)),
     );
     _drawSprite(
       canvas,
       PlaySprites.obstacle(variant),
       pos,
-      size,
-      rotation: angle + pi / 2,
+      size * 0.92,
+      cover: true,
+      rotation: t * 0.35,
     );
+    canvas.restore();
+  }
+
+  /// Full red circle with ticking teeth. Every lethal object on the field uses
+  /// this mark so a glance is enough: red ring = it will hit you, anything else
+  /// will not.
+  void _drawHazardBadge(Canvas canvas, Offset pos, double size, double t) {
+    final pulse = 0.7 + 0.3 * (0.5 + 0.5 * sin(t * 9));
+    final r = size * 0.56;
+
+    canvas.drawCircle(
+      pos,
+      r * 1.22,
+      Paint()
+        ..color = GameColors.danger.withValues(alpha: 0.42 * pulse)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.48),
+    );
+    canvas.drawCircle(
+      pos,
+      r,
+      Paint()..color = const Color(0xFF1A0208).withValues(alpha: 0.92),
+    );
+    canvas.drawCircle(
+      pos,
+      r,
+      Paint()
+        ..color = GameColors.danger.withValues(alpha: 0.35 + 0.55 * pulse)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size * 0.1,
+    );
+    canvas.drawCircle(
+      pos,
+      r * 0.8,
+      Paint()
+        ..color = GameColors.danger.withValues(alpha: 0.5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size * 0.028,
+    );
+
+    canvas.save();
+    canvas.translate(pos.dx, pos.dy);
+    canvas.rotate(t * 1.1);
+    final tooth = Paint()..color = GameColors.danger;
+    for (int i = 0; i < 6; i++) {
+      final a = i * pi / 3;
+      final inner = r * 0.94;
+      final outer = r * 1.2;
+      final path = Path()
+        ..moveTo(cos(a) * inner, sin(a) * inner)
+        ..lineTo(cos(a - 0.18) * outer, sin(a - 0.18) * outer)
+        ..lineTo(cos(a + 0.18) * outer, sin(a + 0.18) * outer)
+        ..close();
+      canvas.drawPath(path, tooth);
+    }
+    canvas.restore();
   }
 
   void _drawVoidWell(Canvas canvas, _Metrics m, double radius, double angle,
       double t, int variant) {
     final pos = m.center + Offset(cos(angle), sin(angle)) * radius;
-    final size = m.iconSize * 1.12;
-    final spin = t * 1.4;
-    canvas.drawCircle(
-      pos,
-      size * 0.55,
-      Paint()
-        ..color = const Color(0xFF1A0530).withValues(alpha: 0.85)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.4),
+    final size = m.iconSize * 1.16;
+    _drawHazardBadge(canvas, pos, size, t);
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: pos, radius: size * 0.44)),
     );
     _drawSprite(
       canvas,
       PlaySprites.voidZone(variant),
       pos,
-      size,
-      rotation: spin,
+      size * 0.9,
+      cover: true,
+      rotation: t * 1.4,
     );
+    canvas.restore();
   }
 
   void _drawGate(
-      Canvas canvas, _Metrics m, double radius, double angle, SlotKind kind) {
+      Canvas canvas, _Metrics m, double radius, double angle, SlotKind kind, double t) {
     final pos = m.center + Offset(cos(angle), sin(angle)) * radius;
-    final size = m.iconSize * 1.45;
+    final size = m.iconSize * 1.22;
     final color = GameColors.gate;
     canvas.drawCircle(
       pos,
-      size * 0.5,
+      size * 0.58,
       Paint()
-        ..color = color.withValues(alpha: 0.28)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.4),
+        ..color = color.withValues(alpha: 0.32)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.45),
+    );
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: pos, radius: size * 0.5)),
     );
     _drawSprite(
       canvas,
       PlaySprites.gate(kind),
       pos,
       size,
-      rotation: angle,
+      cover: true,
+      rotation: t * 0.45,
+    );
+    canvas.restore();
+    canvas.drawCircle(
+      pos,
+      size * 0.52,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size * 0.07,
     );
   }
 
@@ -351,6 +424,15 @@ class GamePainter extends CustomPainter {
       pos,
       size,
       rotation: kind == SlotKind.energy ? t * 0.6 : 0,
+    );
+    // Smooth coloured ring: pickups never wear the spiked red hazard badge.
+    canvas.drawCircle(
+      pos,
+      size * 0.58,
+      Paint()
+        ..color = style.color.withValues(alpha: 0.95)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size * 0.07,
     );
   }
 
@@ -481,20 +563,20 @@ class GamePainter extends CustomPainter {
       final size = m.iconSize * 1.08;
       final spin = t * 1.8 * (drone.variant.isEven ? 1 : -1);
 
-      canvas.drawCircle(
-        pos,
-        size * 0.55,
-        Paint()
-          ..color = GameColors.danger.withValues(alpha: 0.32)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.4),
+      _drawHazardBadge(canvas, pos, size, t);
+      canvas.save();
+      canvas.clipPath(
+        Path()..addOval(Rect.fromCircle(center: pos, radius: size * 0.44)),
       );
       _drawSprite(
         canvas,
         PlaySprites.drone(drone.variant),
         pos,
-        size,
+        size * 0.9,
+        cover: true,
         rotation: spin,
       );
+      canvas.restore();
     }
   }
 
@@ -663,12 +745,20 @@ class GamePainter extends CustomPainter {
     double size, {
     double opacity = 1.0,
     double rotation = 0,
+    bool cover = false,
   }) {
     final image = images.get(ref.asset);
     if (image == null) return;
     final aspect = ref.aspectRatio;
-    final width = aspect > 1 ? size : size * aspect;
-    final height = aspect > 1 ? size / aspect : size;
+    final double width;
+    final double height;
+    if (cover) {
+      width = aspect >= 1 ? size * aspect : size;
+      height = aspect >= 1 ? size : size / aspect;
+    } else {
+      width = aspect > 1 ? size : size * aspect;
+      height = aspect > 1 ? size / aspect : size;
+    }
     canvas.save();
     canvas.translate(center.dx, center.dy);
     if (rotation != 0) canvas.rotate(rotation);

@@ -32,17 +32,19 @@ const List<_TutorialPage> _pages = [
     color: NeonColors.cyan,
     title: 'One Move Only',
     body: 'Your energy ball circles the collapsing core on its own. You never '
-        'steer it. Tap the LEFT half of the screen to shift one lane inward, '
-        'the RIGHT half to shift one lane outward. That is the whole game: '
-        'picking the moment to change lanes.',
+        'steer it. Tap the LEFT half of the screen, or the left arrow, to '
+        'shift one lane inward. The RIGHT half or the right arrow shifts '
+        'one lane outward. That is the whole game: picking the moment to '
+        'change lanes.',
   ),
   _TutorialPage(
     icon: Icons.warning_amber_rounded,
     color: NeonColors.danger,
     title: 'Hazards End The Run',
-    body: 'Spiky barriers, missing track, purple void wells and hunting drones '
-        'all cost a hit. Cracked amber rail still lets you through — once. '
-        'Shift before the well pulls you in.',
+    body: 'Anything inside a spiked red ring is lethal: circular mines, '
+        'missing track, purple void wells and hunting drones all cost a hit. '
+        'Smooth coloured rings are pickups — always safe. Cracked amber rail '
+        'still lets you through — once. Shift before a well pulls you in.',
     legend: [
       SlotKind.obstacle,
       SlotKind.breach,
@@ -68,7 +70,7 @@ const List<_TutorialPage> _pages = [
     icon: Icons.meeting_room_rounded,
     color: NeonColors.emerald,
     title: 'Fly The Gates',
-    body: 'Crescent energy gates across a lane are always worth taking. '
+    body: 'Circular energy portals on a lane are always worth taking. '
         'Energy Gates pay a burst of Neon Energy, Surge Gates clear the '
         'track ahead, and Ghost Gates let you phase through the next hits.',
     legend: [

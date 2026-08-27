@@ -90,7 +90,7 @@ class RunController {
 
   // Core collapse state machine ------------------------------------------
   _CoreSub _coreSub = _CoreSub.calm;
-  double _coreTimer = 6;
+  double _coreTimer = 10;
   int _coreSequence = 0;
   CoreState? _activeHazardKind;
   int? _pulseOrbit;
@@ -153,11 +153,6 @@ class RunController {
     // shift outlasts the shift i-frames, which used to leave a short window
     // where reacting in time still killed you.
     _clearVoidGrace();
-    final bonusInvuln = shiftBoostTimer > 0 ? 0.12 : 0.0;
-    invulnTimer = max(
-      invulnTimer,
-      GameBalance.shiftInvulnerabilityMs / 1000 + bonusInvuln,
-    );
     _sfxQueue.add(GameSfxEvent.orbitalShift);
   }
 
@@ -174,6 +169,7 @@ class RunController {
     if (prismShiftTimer > 0) prismShiftTimer = max(0, prismShiftTimer - dt);
     if (screenShake > 0) screenShake = max(0, screenShake - dt * 2.2);
 
+    final prevAngle = ballAngle;
     ballAngle += speed * dt;
 
     if (shifting) {
@@ -191,7 +187,7 @@ class RunController {
     _advanceLaneReflow(dt);
     _sweepRegeneration();
     _updateDrones(dt);
-    if (!shifting) _evaluateCurrentSlot();
+    if (!shifting) _resolveCollisions(prevAngle, ballAngle);
     _updateVoidGrace(dt);
     _updateFloatingAndParticles(dt);
   }
@@ -235,16 +231,27 @@ class RunController {
       final innerness = active <= 1 ? 1.0 : 1 - (i / (active - 1));
       final current = orbit.slotIndexForAngle(ballAngle);
       for (int s = 0; s < orbit.slotCount; s++) {
-        final ahead = (s - current) % orbit.slotCount;
-        if (ahead < 2 || ahead > orbit.slotCount ~/ 2 + 1) continue;
-        orbit.slots[s] = rollSlot(
-          rng: rng,
-          innerness: innerness,
-          band: band,
-          mods: rollMods,
+        final ahead = (s - current + orbit.slotCount) % orbit.slotCount;
+        if (ahead < GameBalance.minSpawnAheadSlots ||
+            ahead > orbit.slotCount ~/ 2 + 1) {
+          continue;
+        }
+        _plantSlot(
+          i,
+          s,
+          rollSlot(
+            rng: rng,
+            innerness: innerness,
+            band: band,
+            mods: rollMods,
+          ),
+          active,
         );
-        _guaranteeEscapeLane(i, s, active);
       }
+      _preventLethalCluster(i, 0);
+    }
+    for (int s = 0; s < GameBalance.slotsPerOrbit; s++) {
+      _guaranteeEscapeLane(0, s, active);
     }
   }
 
@@ -253,7 +260,7 @@ class RunController {
     final rollMods = RollModifiers(
       shieldChanceBonus: modifiers.shieldChanceBonus,
       prismChanceBonus: modifiers.prismChanceBonus,
-      hazardScale: prismShiftTimer > 0 ? 1.2 : 1.0,
+      hazardScale: prismShiftTimer > 0 ? 1.15 : 1.0,
       rewardScale: prismShiftTimer > 0 ? 1.6 : 1.0,
     );
     final trailing = ballAngle - pi;
@@ -265,13 +272,19 @@ class RunController {
       int safety = 0;
       while (edge < trailing && safety < orbit.slotCount + 2) {
         final idx = orbit.slotIndexForAngle(edge);
-        orbit.slots[idx] = rollSlot(
-          rng: rng,
-          innerness: innerness,
-          band: band,
-          mods: rollMods,
-        );
-        _guaranteeEscapeLane(i, idx, activeOrbits);
+        if (!_inSpawnClearance(idx)) {
+          _plantSlot(
+            i,
+            idx,
+            rollSlot(
+              rng: rng,
+              innerness: innerness,
+              band: band,
+              mods: rollMods,
+            ),
+            activeOrbits,
+          );
+        }
         edge += width;
         safety++;
       }
@@ -279,32 +292,147 @@ class RunController {
     }
   }
 
+  /// True when [slotIndex] is the cell the ball is on, the one it just left,
+  /// or one it will reach before a player can react and shift.
+  bool _inSpawnClearance(int slotIndex) {
+    final count = GameBalance.slotsPerOrbit;
+    final current = orbits[ballOrbit].slotIndexForAngle(ballAngle);
+    final ahead = (slotIndex - current + count) % count;
+    final need = GameBalance.spawnClearanceSlots(speed);
+    return ahead <= need || ahead >= count - 1;
+  }
+
+  void _plantSlot(int orbitIndex, int slotIndex, TrackSlot rolled, int active) {
+    if (_isLethal(rolled) && _inSpawnClearance(slotIndex)) {
+      rolled = TrackSlot(kind: SlotKind.safe);
+    }
+    if (_isLethal(rolled) && _solePlayableOrbit() == orbitIndex) {
+      rolled = TrackSlot(kind: SlotKind.safe);
+    }
+    orbits[orbitIndex].slots[slotIndex] = rolled;
+    _givePersonalSpace(orbitIndex, slotIndex, active);
+    _preventLethalCluster(orbitIndex, slotIndex);
+    _guaranteeEscapeLane(orbitIndex, slotIndex, active);
+  }
+
+  /// Every sprite needs breathing room: no neighbour on the same lane, and no
+  /// stacked sprite on the ring inside or outside at the same angle.
+  void _givePersonalSpace(int orbitIndex, int slotIndex, int activeOrbits) {
+    final orbit = orbits[orbitIndex];
+    if (!orbit.slots[slotIndex].hasContent) return;
+    final count = orbit.slotCount;
+    final prev = orbit.slots[(slotIndex - 1 + count) % count];
+    final next = orbit.slots[(slotIndex + 1) % count];
+    if (prev.hasContent || next.hasContent) {
+      orbit.slots[slotIndex] = TrackSlot(kind: SlotKind.safe);
+      return;
+    }
+    for (final other in [orbitIndex - 1, orbitIndex + 1]) {
+      if (other < 0 || other >= activeOrbits) continue;
+      if (orbits[other].slots[slotIndex].hasContent) {
+        orbit.slots[slotIndex] = TrackSlot(kind: SlotKind.safe);
+        return;
+      }
+    }
+  }
+
   static bool _isLethal(TrackSlot slot) =>
       slot.isDeadly || (slot.kind == SlotKind.voidZone && !slot.consumed);
 
-  /// Lanes roll their content independently, so nothing stops every live lane
-  /// from ending up lethal at the same angle -- an unavoidable death the player
-  /// could not have played around. Whenever that happens, the lane that was
-  /// just rolled is cleared so at least one escape always exists.
-  void _guaranteeEscapeLane(int rolledOrbit, int slotIndex, int activeOrbits) {
-    for (int o = 0; o < activeOrbits; o++) {
-      if (!_isLethal(orbits[o].slots[slotIndex])) return;
+  /// Two lethals back-to-back on one lane leave no beat to read the red ring
+  /// and shift. Clear the newly rolled cell if it would stick to another hit.
+  void _preventLethalCluster(int orbitIndex, int slotIndex) {
+    final orbit = orbits[orbitIndex];
+    final slot = orbit.slots[slotIndex];
+    if (!_isLethal(slot)) return;
+    final prev = orbit.slots[(slotIndex - 1 + orbit.slotCount) % orbit.slotCount];
+    if (_isLethal(prev)) {
+      orbit.slots[slotIndex] = TrackSlot(kind: SlotKind.safe);
     }
-    orbits[rolledOrbit].slots[slotIndex] = TrackSlot(kind: SlotKind.safe);
   }
 
-  void _evaluateCurrentSlot() {
-    final orbit = orbits[ballOrbit];
-    final slotIndex = orbit.slotIndexForAngle(ballAngle);
-    final last = _lastSlotIndex[ballOrbit];
-    if (last == slotIndex) return;
-    _lastSlotIndex[ballOrbit] = slotIndex;
+  /// A lane is sealed at this angle if a core overlay covers it or the slot
+  /// itself is lethal. If every live lane but one is sealed, that last lane
+  /// has to be empty of obstacles -- otherwise the player has nowhere to go.
+  bool _laneSealedAt(int orbitIndex, int slotIndex) {
+    if (_orbitSealedByOverlay(orbitIndex, slotIndex)) return true;
+    return _isLethal(orbits[orbitIndex].slots[slotIndex]);
+  }
 
-    if (_overlayHazardAt(ballOrbit, slotIndex)) {
+  bool _orbitSealedByOverlay(int orbitIndex, int slotIndex) {
+    if (_activeHazardKind == null) return false;
+    return _overlayCovers(orbitIndex, slotIndex);
+  }
+
+  /// While the core is expanding over the inner rings, the leftover playable
+  /// orbit -- if there is only one -- must stay free of moving threats too.
+  int? _solePlayableOrbit() {
+    if (_activeHazardKind != CoreState.expand) return null;
+    final remaining = band.activeOrbits - _expandOrbitCount;
+    if (remaining != 1) return null;
+    return _expandOrbitCount;
+  }
+
+  void _clearLethalAt(int orbitIndex, int slotIndex) {
+    if (_isLethal(orbits[orbitIndex].slots[slotIndex])) {
+      orbits[orbitIndex].slots[slotIndex] = TrackSlot(kind: SlotKind.safe);
+    }
+  }
+
+  /// Lanes roll their content independently, so nothing stops every live lane
+  /// from ending up lethal at the same angle -- an unavoidable death the player
+  /// could not have played around. If only one lane is still open, that lane
+  /// is cleared of obstacles so the player always has a path through.
+  void _guaranteeEscapeLane(int rolledOrbit, int slotIndex, int activeOrbits) {
+    final open = <int>[];
+    for (int o = 0; o < activeOrbits; o++) {
+      if (!_laneSealedAt(o, slotIndex)) open.add(o);
+    }
+    if (open.isEmpty) {
+      orbits[rolledOrbit].slots[slotIndex] = TrackSlot(kind: SlotKind.safe);
+      return;
+    }
+    if (open.length == 1) {
+      _clearLethalAt(open.single, slotIndex);
+    }
+  }
+
+  void _stripSoleEscapeOrbit() {
+    final sole = _solePlayableOrbit();
+    if (sole == null) return;
+    for (int s = 0; s < GameBalance.slotsPerOrbit; s++) {
+      _clearLethalAt(sole, s);
+    }
+    drones.removeWhere((d) => d.orbitIndex == sole);
+  }
+
+  /// Walks every slot crossed this frame. Lethals are tested every frame (so
+  /// a mine still kills after i-frames fade). Pickups and gates fire once.
+  void _resolveCollisions(double fromAngle, double toAngle) {
+    final orbit = orbits[ballOrbit];
+    var idx = orbit.slotIndexForAngle(fromAngle);
+    final end = orbit.slotIndexForAngle(toAngle);
+    int guard = 0;
+    while (true) {
+      final enter = _lastSlotIndex[ballOrbit] != idx;
+      if (enter) {
+        _collapseCrackedBehind(ballOrbit, _lastSlotIndex[ballOrbit]);
+      }
+      _touchSlot(ballOrbit, idx, enter: enter);
+      _lastSlotIndex[ballOrbit] = idx;
+      if (gameOver) return;
+      if (idx == end || guard++ > orbit.slotCount) break;
+      idx = (idx + 1) % orbit.slotCount;
+    }
+  }
+
+  void _touchSlot(int orbitIndex, int slotIndex, {required bool enter}) {
+    if (_overlayHazardAt(orbitIndex, slotIndex)) {
       _triggerHazard();
       return;
     }
 
+    final orbit = orbits[orbitIndex];
     final slot = orbit.slots[slotIndex];
     if (slot.consumed) return;
 
@@ -312,21 +440,18 @@ class RunController {
       case SlotKind.safe:
         return;
       case SlotKind.cracked:
-        // One free pass, then the lane gives way behind you.
-        slot.kind = SlotKind.breach;
-        particles.add(ParticleBurst(
-          angle: ballAngle,
-          radiusFraction: laneRadius(ballOrbit),
-          color: 0xFFFFB020,
-          life: 0.5,
-        ));
         return;
       case SlotKind.breach:
       case SlotKind.obstacle:
         _triggerHazard();
         return;
       case SlotKind.voidZone:
-        voidGraceOrbit = ballOrbit;
+        if (voidGraceTimer != null &&
+            voidGraceOrbit == orbitIndex &&
+            voidGraceSlot == slotIndex) {
+          return;
+        }
+        voidGraceOrbit = orbitIndex;
         voidGraceSlot = slotIndex;
         voidGraceTimer = GameBalance.voidGraceMs / 1000;
         return;
@@ -334,16 +459,31 @@ class RunController {
       case SlotKind.shard:
       case SlotKind.shield:
       case SlotKind.prism:
+        if (!enter) return;
         _collect(slot.kind);
         slot.consumed = true;
         return;
       case SlotKind.gateEnergy:
       case SlotKind.gateGhost:
       case SlotKind.gateSurge:
+        if (!enter) return;
         _activateGate(slot.kind, orbit, slotIndex);
         slot.consumed = true;
         return;
     }
+  }
+
+  void _collapseCrackedBehind(int orbitIndex, int? lastIndex) {
+    if (lastIndex == null || lastIndex < 0) return;
+    final slot = orbits[orbitIndex].slots[lastIndex];
+    if (slot.kind != SlotKind.cracked) return;
+    slot.kind = SlotKind.breach;
+    particles.add(ParticleBurst(
+      angle: ballAngle,
+      radiusFraction: laneRadius(orbitIndex),
+      color: 0xFFFFB020,
+      life: 0.5,
+    ));
   }
 
   void _clearVoidGrace() {
@@ -409,14 +549,7 @@ class RunController {
   }
 
   void _triggerHazard() {
-    if (invulnTimer > 0 || phaseGhostTimer > 0) {
-      particles.add(ParticleBurst(
-        angle: ballAngle,
-        radiusFraction: laneRadius(ballOrbit),
-        color: 0xFF3DEFFF,
-      ));
-      return;
-    }
+    if (invulnTimer > 0 || phaseGhostTimer > 0) return;
     if (shields > 0) {
       shields -= 1;
       invulnTimer = max(
@@ -464,19 +597,19 @@ class RunController {
         final amount = elapsedSeconds > 100 && rng.nextDouble() < 0.3 ? 2 : 1;
         crystalShardsRun += amount;
         _floatReward('+$amount SHARD', 0xFFFF4FD8);
-        _sfxQueue.add(GameSfxEvent.collectRare);
+        _sfxQueue.add(GameSfxEvent.collectEnergy);
         break;
       case SlotKind.shield:
         shields = min(GameBalance.maxShields, shields + 1);
         _floatReward('SHIELD +1', 0xFF33FFB0);
-        _sfxQueue.add(GameSfxEvent.shieldActivate);
+        _sfxQueue.add(GameSfxEvent.collectEnergy);
         break;
       case SlotKind.prism:
         crystalShardsRun += 5;
         _awardEnergy(70);
         prismShiftTimer = max(prismShiftTimer, 7.0);
         _floatReward('PRISM SHIFT!', 0xFFFFC85C);
-        _sfxQueue.add(GameSfxEvent.sectorPortal);
+        _sfxQueue.add(GameSfxEvent.collectEnergy);
         break;
       default:
         break;
@@ -502,7 +635,7 @@ class RunController {
       default:
         break;
     }
-    _sfxQueue.add(GameSfxEvent.gateActivate);
+    _sfxQueue.add(GameSfxEvent.collectEnergy);
   }
 
   /// Clears damage from the slots either side of [slotIndex], so a Surge Gate
@@ -530,14 +663,20 @@ class RunController {
     // Drones stay scarce -- they are the only moving threat, and they only
     // read as one while the player can count them at a glance.
     final int targetCount;
-    if (elapsedSeconds < 45) {
+    if (elapsedSeconds < 40) {
       targetCount = 0;
-    } else if (elapsedSeconds < 90) {
+    } else if (elapsedSeconds < 60) {
       targetCount = 1;
-    } else if (elapsedSeconds < 150) {
+    } else if (elapsedSeconds < 80) {
       targetCount = 2;
-    } else {
+    } else if (elapsedSeconds < 110) {
       targetCount = 3;
+    } else {
+      targetCount = 4;
+    }
+    final sole = _solePlayableOrbit();
+    if (sole != null) {
+      drones.removeWhere((d) => d.orbitIndex == sole);
     }
 
     drones.removeWhere((d) => d.orbitIndex >= activeOrbits);
@@ -563,16 +702,21 @@ class RunController {
 
   void _spawnDrone(int activeOrbits) {
     if (activeOrbits <= 0) return;
-    final span = pi * (0.35 + rng.nextDouble() * 0.45);
-    // Spawn well ahead of the ball so a drone never materialises on top of it.
-    final start = ballAngle + pi * 0.6 + rng.nextDouble() * pi;
+    final sole = _solePlayableOrbit();
+    if (sole != null) return;
+    final minLead = orbits[0].slotAngleWidth() *
+            GameBalance.spawnClearanceSlots(speed) +
+        0.45;
+    final start = ballAngle + minLead + rng.nextDouble() * pi * 0.75;
+    if (_angleDiff(start, ballAngle).abs() < minLead) return;
+    final span = pi * (0.30 + rng.nextDouble() * 0.40);
     drones.add(Drone(
       orbitIndex: rng.nextInt(activeOrbits),
       variant: rng.nextInt(4),
       minAngle: start,
       maxAngle: start + span,
       angle: start,
-      speed: 0.9 + rng.nextDouble() * 0.6,
+      speed: 1.05 + rng.nextDouble() * 0.7,
     ));
   }
 
@@ -608,7 +752,11 @@ class RunController {
       case _CoreSub.active:
         _coreSub = _CoreSub.calm;
         _activeHazardKind = null;
-        _coreTimer = 6 + rng.nextDouble() * 3;
+        _coreTimer = elapsedSeconds < 50
+            ? 7.0 + rng.nextDouble() * 2.2
+            : elapsedSeconds < 100
+                ? 5.0 + rng.nextDouble() * 2.0
+                : 3.6 + rng.nextDouble() * 1.6;
         break;
     }
   }
@@ -617,12 +765,16 @@ class RunController {
     final activeOrbits = band.activeOrbits;
     switch (kind) {
       case CoreState.pulse:
+        final current = orbits[ballOrbit].slotIndexForAngle(ballAngle);
+        final lead = GameBalance.spawnClearanceSlots(speed);
         _pulseOrbit = rng.nextInt(activeOrbits);
-        _pulseStartSlot = rng.nextInt(GameBalance.slotsPerOrbit);
+        _pulseStartSlot =
+            (current + lead + rng.nextInt(3)) % GameBalance.slotsPerOrbit;
         _pulseSlotCount = 3 + rng.nextInt(2);
         break;
       case CoreState.expand:
         _expandOrbitCount = min(2, activeOrbits - 1).clamp(1, activeOrbits);
+        _stripSoleEscapeOrbit();
         break;
       case CoreState.collapse:
         _collapseCells.clear();
@@ -631,11 +783,15 @@ class RunController {
           final o = rng.nextInt(activeOrbits);
           final s = rng.nextInt(GameBalance.slotsPerOrbit);
           if (_collapseCells.contains((o, s))) continue;
+          if (o == ballOrbit && _inSpawnClearance(s)) continue;
           // Never seal off a whole angular column: one lane at every angle
           // has to stay passable.
           final columnSize = _collapseCells.where((c) => c.$2 == s).length + 1;
           if (columnSize >= activeOrbits) continue;
           _collapseCells.add((o, s));
+        }
+        for (int s = 0; s < GameBalance.slotsPerOrbit; s++) {
+          _guaranteeEscapeLane(0, s, activeOrbits);
         }
         break;
       case CoreState.stable:

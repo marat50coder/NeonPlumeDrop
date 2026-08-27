@@ -83,6 +83,7 @@ class TrackSlot {
   bool get isDeadly => kind.killsOnContact && !consumed;
   bool get isCollectible => kind.family == SlotFamily.pickup && !consumed;
   bool get isGate => kind.family == SlotFamily.gate && !consumed;
+  bool get hasContent => !consumed && kind != SlotKind.safe;
 }
 
 /// A full concentric orbit ring made of [TrackSlot]s.

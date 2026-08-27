@@ -8,12 +8,17 @@ import 'game_models.dart';
 class PlaySprites {
   PlaySprites._();
 
+  /// Circular mines only. The tall energy pylon in Obstacles Set 1 sits as a
+  /// half-ring once it is rotated onto an orbit, so it is left out.
   static SpriteRef obstacle(int variant) {
-    final sheet = variant >= 4
-        ? GameAssets.energyObstacles2
-        : GameAssets.energyObstacles1;
-    final v = variant % 4;
-    return SpriteRef(sheet, SpriteGrids.grid2x2, v % 2, v ~/ 2);
+    const circular = [
+      (GameAssets.energyObstacles1, 0, 0), // spiked mine
+      (GameAssets.energyObstacles1, 1, 1), // hex core
+      (GameAssets.energyObstacles2, 1, 1), // mechanical orb
+      (GameAssets.energyObstacles2, 0, 1), // shard ring
+    ];
+    final cell = circular[variant % circular.length];
+    return SpriteRef(cell.$1, SpriteGrids.grid2x2, cell.$2, cell.$3);
   }
 
   static SpriteRef drone(int variant) =>
@@ -56,14 +61,16 @@ class PlaySprites {
   static const SpriteRef prism = SpriteRef.single(GameAssets.rarePrismCore);
   static const SpriteRef neonOrb = SpriteRef.single(GameAssets.neonEnergyOrb);
 
+  /// Full circular portals. The Energy Gates sheet is a set of open crescents
+  /// that read as half-rings on an orbit, so the play field uses closed rings.
   static SpriteRef gate(SlotKind kind) => switch (kind) {
         SlotKind.gateEnergy =>
-          const SpriteRef(GameAssets.energyGates, SpriteGrids.grid2x2, 0, 0),
+          const SpriteRef(GameAssets.energyRings2, SpriteGrids.grid2x2, 0, 0),
         SlotKind.gateSurge =>
-          const SpriteRef(GameAssets.energyGates, SpriteGrids.grid2x2, 1, 0),
+          const SpriteRef(GameAssets.energyRings2, SpriteGrids.grid2x2, 1, 0),
         SlotKind.gateGhost =>
-          const SpriteRef(GameAssets.energyGates, SpriteGrids.grid2x2, 0, 1),
-        _ => const SpriteRef(GameAssets.energyGates, SpriteGrids.grid2x2, 1, 1),
+          const SpriteRef(GameAssets.energyRings3, SpriteGrids.grid2x1, 1, 0),
+        _ => const SpriteRef(GameAssets.energyRings2, SpriteGrids.grid2x2, 0, 1),
       };
 
   static SpriteRef coreRing(int variant) => SpriteRef(

@@ -90,7 +90,6 @@ class GameAssets {
     energyObstacles2,
     energyDrones,
     voidZones,
-    energyGates,
     energyCrystals1,
     energyCrystals2,
     floatingCrystals,
