@@ -317,7 +317,7 @@ def main() -> None:
 			isa = XCBuildConfiguration;
 			buildSettings = {{
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = L6C2DFLMGM;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = OrbitPulseService/Info.plist;
@@ -342,7 +342,7 @@ def main() -> None:
 			isa = XCBuildConfiguration;
 			buildSettings = {{
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = L6C2DFLMGM;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = OrbitPulseService/Info.plist;
@@ -366,7 +366,7 @@ def main() -> None:
 			isa = XCBuildConfiguration;
 			buildSettings = {{
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = L6C2DFLMGM;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = OrbitPulseService/Info.plist;
