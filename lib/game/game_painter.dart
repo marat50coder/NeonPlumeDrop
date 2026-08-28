@@ -177,11 +177,16 @@ class GamePainter extends CustomPainter {
         ..strokeWidth = thickness * 0.3,
     );
 
+    final nearestLethal = occupied ? controller.nearestLethalAhead : null;
     for (int s = 0; s < orbit.slotCount; s++) {
       final angle = s * slotWidth;
       final overlay = controller.overlayStateFor(lane, s);
       if (overlay != CoreStrike.none) {
         _drawOverlayStrike(canvas, m, bounds, angle, slotWidth, overlay, t);
+      }
+      if (nearestLethal == s) {
+        final pos = m.center + Offset(cos(angle), sin(angle)) * radius;
+        _drawIncomingDangerPulse(canvas, pos, m.iconSize * 1.35, t);
       }
       final slot = orbit.slots[s];
       if (slot.consumed) continue;
@@ -223,6 +228,31 @@ class GamePainter extends CustomPainter {
     final slot = orbit.slots[slotIndex];
     if (slot.kind == SlotKind.breach && !slot.consumed) return true;
     return controller.overlayStateFor(lane, slotIndex) == CoreStrike.lethal;
+  }
+
+  /// Expanding red ping on the next lethal on the player's own ring. Other
+  /// mines keep the usual badge; this one has to shout.
+  void _drawIncomingDangerPulse(Canvas canvas, Offset pos, double size, double t) {
+    final breath = 0.5 + 0.5 * sin(t * 6.4);
+    canvas.drawCircle(
+      pos,
+      size * (0.92 + 0.20 * breath),
+      Paint()
+        ..color = GameColors.danger.withValues(alpha: 0.18 + 0.22 * breath)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.38),
+    );
+    final ping = (t * 0.9) % 1.0;
+    for (final phase in const [0.0, 0.5]) {
+      final p = (ping + phase) % 1.0;
+      canvas.drawCircle(
+        pos,
+        size * (0.42 + 0.78 * p),
+        Paint()
+          ..color = GameColors.danger.withValues(alpha: (1 - p) * 0.62)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = size * (0.07 - 0.03 * p),
+      );
+    }
   }
 
   void _drawCracked(

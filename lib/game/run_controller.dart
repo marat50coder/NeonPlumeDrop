@@ -126,6 +126,20 @@ class RunController {
     return laneRadius(shiftFrom) + (laneRadius(shiftTo) - laneRadius(shiftFrom)) * t;
   }
 
+  /// First lethal on the ball's lane at or ahead of it. The painter uses this
+  /// to breathe a red ping on the next mine, so the player can read it at a
+  /// glance without scanning the whole ring.
+  int? get nearestLethalAhead {
+    if (ballOrbit < 0 || ballOrbit >= band.activeOrbits) return null;
+    final orbit = orbits[ballOrbit];
+    final current = orbit.slotIndexForAngle(ballAngle);
+    for (int k = 0; k < orbit.slotCount; k++) {
+      final s = (current + k) % orbit.slotCount;
+      if (_isLethal(orbit.slots[s])) return s;
+    }
+    return null;
+  }
+
   static double _easeInOutQuad(double t) {
     return t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2;
   }

@@ -184,4 +184,19 @@ void main() {
       }
     }
   });
+
+  test('nearest lethal ahead is the first mine on the ball lane', () {
+    final run = RunController(modifiers: RunModifiers.none, seed: 5);
+    final orbit = run.orbits[run.ballOrbit];
+    for (final slot in orbit.slots) {
+      slot.kind = SlotKind.safe;
+      slot.consumed = false;
+    }
+    final current = orbit.slotIndexForAngle(run.ballAngle);
+    final first = (current + 3) % orbit.slotCount;
+    final later = (current + 7) % orbit.slotCount;
+    orbit.slots[first].kind = SlotKind.obstacle;
+    orbit.slots[later].kind = SlotKind.voidZone;
+    expect(run.nearestLethalAhead, first);
+  });
 }
