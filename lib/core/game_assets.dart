@@ -8,10 +8,12 @@ class GameAssets {
   static const String _play = 'assets/Neon_Plume_Drop_gameplay_assets';
   static const String _sfx = 'assets/Neon_Plume_Drop_sounds_assets';
 
-  static const String gameLogo = '$_extra/Game_Name.webp';
-  static const String loadingVertical = '$_extra/Vertical_Loading_Screen.webp';
+  static const String gameLogo = '$_extra/plume_wordmark.webp';
+  static const String loadingVertical = '$_extra/orbit_ignite_portrait.webp';
   static const String loadingHorizontal =
-      '$_extra/Horizontal_Loading_Screen.webp';
+      '$_extra/orbit_ignite_landscape.webp';
+  static const String notifyVertical = '$_extra/orbit_permit_portrait.webp';
+  static const String notifyHorizontal = '$_extra/orbit_permit_landscape.webp';
 
   static const String bgDeepNeonSpace =
       '$_play/Deep_Neon_Space_Background_asset.webp';

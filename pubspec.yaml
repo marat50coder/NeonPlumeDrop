@@ -1,7 +1,7 @@
 name: neon_plume_drop
 description: "Neon Plume Drop — a neon cosmic orbit-shift survival arcade."
 publish_to: "none"
-version: 1.0.2+5
+version: 1.0.3+7
 
 environment:
   sdk: ^3.12.2
@@ -11,14 +11,23 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.5.5
-  webview_flutter: ^4.14.1
+  webview_flutter: ^4.13.0
   audioplayers: ^6.8.1
   provider: ^6.1.5+1
   image_picker: ^1.2.0
   path_provider: ^2.1.5
   flutter_local_notifications: ^19.5.0
-  appsflyer_sdk: ^6.17.7
+  appsflyer_sdk: ^6.17.8
   app_tracking_transparency: ^2.0.6+1
+  firebase_core: ^4.11.1
+  firebase_messaging: ^16.3.0
+  firebase_app_check: ^0.4.4
+  connectivity_plus: '>=7.0.0 <7.1.0'
+  http: ^1.5.0
+  device_info_plus: 12.2.0
+  flutter_secure_storage: ^10.2.4
+  webview_flutter_wkwebview: ^3.23.0
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
@@ -28,10 +37,14 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  config:
+    enable-swift-package-manager: false
   assets:
-    - assets/Neon_Plume_Drop_additional_assets/Game_Name.webp
-    - assets/Neon_Plume_Drop_additional_assets/Vertical_Loading_Screen.webp
-    - assets/Neon_Plume_Drop_additional_assets/Horizontal_Loading_Screen.webp
+    - assets/Neon_Plume_Drop_additional_assets/plume_wordmark.webp
+    - assets/Neon_Plume_Drop_additional_assets/orbit_ignite_portrait.webp
+    - assets/Neon_Plume_Drop_additional_assets/orbit_ignite_landscape.webp
+    - assets/Neon_Plume_Drop_additional_assets/orbit_permit_portrait.webp
+    - assets/Neon_Plume_Drop_additional_assets/orbit_permit_landscape.webp
     - assets/Neon_Plume_Drop_gameplay_assets/Deep_Neon_Space_Background_asset.webp
     - assets/Neon_Plume_Drop_gameplay_assets/Crystal_Galaxy_Background_asset.webp
     - assets/Neon_Plume_Drop_gameplay_assets/Digital_Void_Background_asset.webp

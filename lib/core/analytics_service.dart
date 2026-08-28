@@ -2,6 +2,7 @@ import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:appsflyer_sdk/appsflyer_sdk.dart';
 import 'package:flutter/foundation.dart';
 
+import '../flarepath/config/flare_config.dart';
 import 'appsflyer_config.dart';
 import 'attribution.dart';
 import 'profile_service.dart';
@@ -20,6 +21,7 @@ class AnalyticsService {
   Future<void> start() async {
     if (_started) return;
     _started = true;
+    if (FlareConfig.grayCredentialsReady) return;
     snapshot = ProfileService.instance.attribution;
     try {
       await _requestTrackingIfNeeded();

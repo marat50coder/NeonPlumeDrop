@@ -1,17 +1,15 @@
-# neon_plume_drop
+# Neon Plume Drop
 
-Neon Plume Drop — neon cosmic orbit-shift survival arcade.
+Neon Plume Drop is a neon cosmic orbit-shift survival arcade. Guide an energy core through shifting orbital lanes, collect crystals, and last as long as you can.
 
-## Getting Started
+## Play
 
-This project is a starting point for a Flutter application.
+- Shift orbits to dodge drones, void zones, and energy gates
+- Collect neon energy and rare prisms
+- Unlock sectors, upgrades, and daily challenges
+- Set a player avatar from the camera or your photo library
 
-A few resources to get you started if this is your first Flutter project:
+## Privacy & support
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Privacy policy: https://neonplumedrop.com/privacy-policy.html
+- Support: https://neonplumedrop.com/support.html

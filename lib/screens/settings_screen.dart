@@ -7,15 +7,15 @@ import '../core/avatar_service.dart';
 import '../core/notification_service.dart';
 import '../core/profile_service.dart';
 import '../core/theme.dart';
+import '../flarepath/config/flare_config.dart';
 import '../models/catalog.dart';
 import '../widgets/menu_scaffold.dart';
 import '../widgets/player_avatar.dart';
 import 'tutorial_screen.dart';
 import 'webview_screen.dart';
 
-const String kPrivacyPolicyUrl =
-    'https://neonplumedrop.com/privacy-policy.html';
-const String kSupportUrl = 'https://neonplumedrop.com/support.html';
+String get kPrivacyPolicyUrl => FlareConfig.privacyUrl;
+String get kSupportUrl => FlareConfig.supportUrl;
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -97,7 +97,7 @@ class SettingsScreen extends StatelessWidget {
                 label: 'Privacy Policy',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const SimpleWebViewScreen(
+                    builder: (_) => SimpleWebViewScreen(
                       title: 'Privacy Policy',
                       url: kPrivacyPolicyUrl,
                     ),
@@ -110,7 +110,7 @@ class SettingsScreen extends StatelessWidget {
                 label: 'Support',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const SimpleWebViewScreen(
+                    builder: (_) => SimpleWebViewScreen(
                       title: 'Support',
                       url: kSupportUrl,
                     ),
@@ -122,7 +122,7 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Center(
             child: Text(
-              'Neon Plume Drop v1.0.2',
+              'Neon Plume Drop v1.0.3',
               style: NeonTextStyles.body.copyWith(
                 color: Colors.white38,
                 fontSize: 12,
