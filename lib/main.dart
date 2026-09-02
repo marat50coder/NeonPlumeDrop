@@ -1,14 +1,8 @@
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
-import 'core/audio_service.dart';
 import 'core/orientation_controller.dart';
-import 'core/profile_service.dart';
 import 'flarepath/config/flare_config.dart';
 import 'flarepath/core/flare_log.dart';
 import 'flarepath/flare_router.dart';
@@ -34,14 +28,6 @@ Future<void> main() async {
   );
   await OrientationController.allowAll();
 
-  final vault = PlumeVault();
-  final agent = OrbitAgent();
-  await Future.wait<void>(<Future<void>>[
-    vault.initialize(),
-    agent.prepare(),
-    _warmGame(),
-  ]);
-
   flareTrace(
     () => '[NPD.BOOT] credentialsReady=${FlareConfig.grayCredentialsReady} '
         'endpoint=${FlareConfig.endpoint} '
@@ -49,52 +35,19 @@ Future<void> main() async {
         'fbNum=${FlareConfig.firebaseProjectNumber}',
   );
 
-  var productionServicesReady = false;
-  if (FlareConfig.grayCredentialsReady) {
-    try {
-      await Firebase.initializeApp();
-      productionServicesReady = true;
-      FirebaseMessaging.onBackgroundMessage(flareBackgroundPulse);
-      flareTrace(() => '[NPD.BOOT] Firebase.initializeApp OK');
-    } catch (error) {
-      flareTrace(() => '[NPD.BOOT] Firebase.initializeApp failed: $error');
-    }
-    if (productionServicesReady) {
-      try {
-        await FirebaseAppCheck.instance.activate(
-          providerApple: kDebugMode
-              ? const AppleDebugProvider()
-              : const AppleAppAttestWithDeviceCheckFallbackProvider(),
-        );
-      } catch (error) {
-        flareTrace(() => '[NPD.BOOT] AppCheck skipped: $error');
-      }
-    }
-  } else {
-    flareTrace(() => '[NPD.BOOT] gray gate DISABLED — white part only');
-  }
-
+  final vault = PlumeVault();
+  final agent = OrbitAgent();
   final probe = SkylineProbe();
-  final pulse = FlarePulse(vault, enabled: productionServicesReady);
-  final attribution = OrbitAttribution(agent);
   final router = FlareRouter(
     vault: vault,
     probe: probe,
-    attribution: attribution,
+    attribution: OrbitAttribution(agent),
     exchange: FlareExchange(agent, vault),
-    pulse: pulse,
+    pulse: FlarePulse(vault, enabled: FlareConfig.grayCredentialsReady),
     agent: agent,
     runtimeEnabled: FlareConfig.grayCredentialsReady,
   );
 
+  // Do not await Firebase / prefs / DNS here. First frame must be nowifi.
   runApp(NeonPlumeDropApp(router: router));
-}
-
-Future<void> _warmGame() async {
-  try {
-    await ProfileService.instance.load();
-  } catch (_) {}
-  try {
-    await AudioService.instance.init();
-  } catch (_) {}
 }

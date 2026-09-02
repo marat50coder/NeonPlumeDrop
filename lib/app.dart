@@ -6,6 +6,7 @@ import 'core/profile_service.dart';
 import 'core/theme.dart';
 import 'flarepath/flare_router.dart';
 import 'flarepath/pages/ignite_screen.dart';
+import 'flarepath/pages/orbit_boot_gate.dart';
 
 class NeonPlumeDropApp extends StatelessWidget {
   const NeonPlumeDropApp({super.key, this.router});
@@ -39,7 +40,9 @@ class NeonPlumeDropApp extends StatelessWidget {
           ),
         ),
         builder: (context, child) => ClampedTextScale(child: child!),
-        home: IgniteScreen(router: router),
+        home: router == null
+            ? const IgniteScreen()
+            : OrbitBootGate(router: router!),
       ),
     );
   }

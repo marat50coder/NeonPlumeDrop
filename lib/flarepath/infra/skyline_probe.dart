@@ -8,41 +8,50 @@ class SkylineProbe {
   Future<bool> hasInterface() async {
     try {
       final status = await _connectivity.checkConnectivity();
-      return status.any((value) => value != ConnectivityResult.none);
+      if (status.isEmpty) return false;
+      if (status.every((value) => value == ConnectivityResult.none)) {
+        return false;
+      }
+      return status.any(
+        (value) =>
+            value == ConnectivityResult.wifi ||
+            value == ConnectivityResult.mobile ||
+            value == ConnectivityResult.ethernet,
+      );
     } catch (_) {
       return false;
     }
   }
 
-  /// Boot fast-path: radio flag + one DNS lookup, no retry. Offline devices
-  /// fail in well under a second so the no-wifi screen can appear before
-  /// the loading pipeline (Firebase / AppsFlyer / config POST) starts.
+  /// HTTP to a raw IP. DNS cache and a stale Wi-Fi path (common after the
+  /// app was installed / last opened online) must not count as reachable.
+  Future<bool> _httpOpen() async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(milliseconds: 320)
+      ..idleTimeout = const Duration(milliseconds: 320);
+    try {
+      final request = await client
+          .getUrl(Uri.parse('http://1.1.1.1'))
+          .timeout(const Duration(milliseconds: 320));
+      request.followRedirects = false;
+      final response = await request.close().timeout(
+        const Duration(milliseconds: 320),
+      );
+      await response.drain<void>();
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   Future<bool> quickReach() async {
     if (!await hasInterface()) return false;
-    try {
-      final records = await InternetAddress.lookup(
-        'www.ietf.org',
-      ).timeout(const Duration(milliseconds: 740));
-      return records.any((record) => record.rawAddress.isNotEmpty);
-    } catch (_) {
-      return false;
-    }
+    return _httpOpen();
   }
 
-  Future<bool> canReachNetwork() async {
-    if (!await hasInterface()) return false;
-    for (final host in const <String>['www.ietf.org', 'www.iana.org']) {
-      try {
-        final records = await InternetAddress.lookup(
-          host,
-        ).timeout(const Duration(milliseconds: 4100));
-        if (records.any((record) => record.rawAddress.isNotEmpty)) {
-          return true;
-        }
-      } catch (_) {}
-    }
-    return false;
-  }
+  Future<bool> canReachNetwork() => quickReach();
 
   Stream<List<ConnectivityResult>> get changes =>
       _connectivity.onConnectivityChanged;

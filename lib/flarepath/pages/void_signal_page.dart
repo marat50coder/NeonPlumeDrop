@@ -71,84 +71,114 @@ class _VoidSignalPageState extends State<VoidSignalPage> {
 
   @override
   Widget build(BuildContext context) {
-    final landscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final size = MediaQuery.sizeOf(context);
+    final landscape = size.width > size.height;
+    final shortest = size.shortestSide;
+    final titleSize = landscape ? 20.0 : (shortest < 380 ? 20.0 : 22.0);
+    final subtitleSize = landscape ? 15.0 : 16.0;
     final buttonWidth = landscape
-        ? (MediaQuery.sizeOf(context).width * 0.38).clamp(280.0, 500.0)
-        : (MediaQuery.sizeOf(context).width * 0.68).clamp(250.0, 400.0);
+        ? (size.width * 0.42).clamp(240.0, 420.0)
+        : (size.width * 0.68).clamp(250.0, 400.0);
+    final buttonHeight = landscape ? 54.0 : 64.0;
+
+    const gradient = BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: <Color>[
+          Color(0xFF2B1250),
+          Color(0xFF5B2C8A),
+          Color(0xFF9B5CFF),
+          Color(0xFF3A1860),
+        ],
+        stops: <double>[0.0, 0.38, 0.72, 1.0],
+      ),
+    );
+
+    final copy = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          'NO INTERNET CONNECTION',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: titleSize,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            height: 1.2,
+          ),
+        ),
+        SizedBox(height: landscape ? 10 : 14),
+        Text(
+          'Check your connection and try again',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: const Color(0xFFC8C8D4),
+            fontSize: subtitleSize,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+
+    final actions = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _RetryChip(
+          width: buttonWidth,
+          height: buttonHeight,
+          busy: _checking,
+          onTap: _retry,
+        ),
+        if (_stillOffline)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Text(
+              'Still offline',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: _blackChrome,
       child: Scaffold(
         backgroundColor: const Color(0xFF16082A),
-        body: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                Color(0xFF2B1250),
-                Color(0xFF5B2C8A),
-                Color(0xFF9B5CFF),
-                Color(0xFF3A1860),
-              ],
-              stops: <double>[0.0, 0.38, 0.72, 1.0],
-            ),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: landscape ? 48 : 28,
-                vertical: landscape ? 24 : 36,
-              ),
-              child: Column(
-                children: <Widget>[
-                  const Spacer(),
-                  const Text(
-                    'NO INTERNET CONNECTION',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Check your connection and try again',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0xFFC8C8D4),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      height: 1.35,
-                    ),
-                  ),
-                  const Spacer(),
-                  _RetryChip(
-                    width: buttonWidth,
-                    height: landscape ? 58.0 : 64.0,
-                    busy: _checking,
-                    onTap: _retry,
-                  ),
-                  if (_stillOffline)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 14),
-                      child: Text(
-                        'Still offline',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+        body: SizedBox.expand(
+          child: DecoratedBox(
+            decoration: gradient,
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: landscape ? 56 : 28,
+                  vertical: landscape ? 16 : 36,
+                ),
+                child: Center(
+                  child: landscape
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            Expanded(child: copy),
+                            const SizedBox(width: 32),
+                            actions,
+                          ],
+                        )
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            copy,
+                            const SizedBox(height: 36),
+                            actions,
+                          ],
                         ),
-                      ),
-                    )
-                  else
-                    const SizedBox(height: 28),
-                  SizedBox(height: landscape ? 8 : 16),
-                ],
+                ),
               ),
             ),
           ),

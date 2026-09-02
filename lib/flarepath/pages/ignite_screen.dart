@@ -13,6 +13,7 @@ import '../../core/theme.dart';
 import '../../screens/main_menu_screen.dart';
 import '../core/flare_models.dart';
 import '../flare_router.dart';
+import '../infra/flare_boot.dart';
 import 'flare_invite.dart';
 import 'orbit_portal.dart';
 import 'void_signal_page.dart';
@@ -106,7 +107,19 @@ class _IgniteScreenState extends State<IgniteScreen>
 
   Future<void> _begin() async {
     final router = widget.router;
+    try {
+      await router?.vault.initialize();
+    } catch (_) {}
     if (router != null && !await router.probe.quickReach()) {
+      await _openOfflineNow();
+      return;
+    }
+    try {
+      await router?.agent.prepare();
+    } catch (_) {}
+    await FlareBoot.warmGame();
+    await FlareBoot.ensureProduction();
+    if (router != null && !await router.probe.hasInterface()) {
       await _openOfflineNow();
       return;
     }

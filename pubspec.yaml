@@ -1,7 +1,7 @@
 name: neon_plume_drop
 description: "Neon Plume Drop — a neon cosmic orbit-shift survival arcade."
 publish_to: "none"
-version: 1.0.3+9
+version: 1.0.3+10
 
 environment:
   sdk: ^3.12.2

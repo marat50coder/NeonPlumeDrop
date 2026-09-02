@@ -16,10 +16,12 @@ class PlumeVault {
 
   final FlutterSecureStorage _secure = const FlutterSecureStorage();
   late SharedPreferences _preferences;
+  Future<void>? _ready;
 
-  Future<void> initialize() async {
-    _preferences = await SharedPreferences.getInstance();
-  }
+  Future<void> initialize() =>
+      _ready ??= SharedPreferences.getInstance().then((prefs) {
+        _preferences = prefs;
+      });
 
   OrbitLane get lane => OrbitLane.parse(_preferences.getString(_laneKey));
 

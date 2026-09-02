@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import '../config/flare_config.dart';
@@ -42,6 +43,10 @@ class FlarePulse {
   Future<void> _boot() async {
     flareTrace(() => '[NPD.pulse] boot start (enabled=$enabled)');
     if (!enabled) return;
+    if (Firebase.apps.isEmpty) {
+      flareTrace(() => '[NPD.pulse] boot skipped — Firebase not ready');
+      return;
+    }
 
     final messaging = FirebaseMessaging.instance;
     _messaging = messaging;
