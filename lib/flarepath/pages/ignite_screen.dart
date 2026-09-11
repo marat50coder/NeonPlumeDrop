@@ -83,6 +83,7 @@ class _IgniteScreenState extends State<IgniteScreen>
     super.didChangeDependencies();
     if (!_started) {
       _started = true;
+      unawaited(widget.router?.attribution.start());
       unawaited(_begin());
     }
   }

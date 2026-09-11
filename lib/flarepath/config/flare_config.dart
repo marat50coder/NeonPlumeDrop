@@ -10,7 +10,7 @@ abstract final class FlareConfig {
   static const int organicRecheckSeconds = 11;
   static const int savedUrlExpiryDays = 6;
   static const int exchangeTimeoutMs = 18400;
-  static const int installSignalTimeoutMs = 7400;
+  static const int installSignalTimeoutMs = 20000;
   static const int returningSignalTimeoutMs = 7100;
   static const int attPromptDelayMs = 540;
   static const int redirectLoopBudget = 2;

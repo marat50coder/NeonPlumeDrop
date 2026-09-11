@@ -2,56 +2,45 @@ import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+/// Same two-step check as Bolt-of-Aether `NetProbe`.
+/// Radio flag first, then a real DNS lookup. Do not use cleartext HTTP:
+/// iOS ATS blocks `http://1.1.1.1` and the app then sits on nowifi
+/// even when the WAN is up.
 class SkylineProbe {
   final Connectivity _connectivity = Connectivity();
 
   Future<bool> hasInterface() async {
     try {
       final status = await _connectivity.checkConnectivity();
-      if (status.isEmpty) return false;
-      if (status.every((value) => value == ConnectivityResult.none)) {
-        return false;
-      }
-      return status.any(
-        (value) =>
-            value == ConnectivityResult.wifi ||
-            value == ConnectivityResult.mobile ||
-            value == ConnectivityResult.ethernet,
-      );
+      return status.any((value) => value != ConnectivityResult.none);
     } catch (_) {
       return false;
     }
   }
 
-  /// HTTP to a raw IP. DNS cache and a stale Wi-Fi path (common after the
-  /// app was installed / last opened online) must not count as reachable.
-  Future<bool> _httpOpen() async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(milliseconds: 320)
-      ..idleTimeout = const Duration(milliseconds: 320);
-    try {
-      final request = await client
-          .getUrl(Uri.parse('http://1.1.1.1'))
-          .timeout(const Duration(milliseconds: 320));
-      request.followRedirects = false;
-      final response = await request.close().timeout(
-        const Duration(milliseconds: 320),
-      );
-      await response.drain<void>();
-      return true;
-    } catch (_) {
-      return false;
-    } finally {
-      client.close(force: true);
+  Future<bool> _dnsOpen({
+    Duration timeout = const Duration(milliseconds: 800),
+  }) async {
+    for (final host in const <String>['gstatic.com', 'apple.com']) {
+      try {
+        final records = await InternetAddress.lookup(host).timeout(timeout);
+        if (records.any((record) => record.rawAddress.isNotEmpty)) {
+          return true;
+        }
+      } catch (_) {}
     }
+    return false;
   }
 
   Future<bool> quickReach() async {
     if (!await hasInterface()) return false;
-    return _httpOpen();
+    return _dnsOpen();
   }
 
-  Future<bool> canReachNetwork() => quickReach();
+  Future<bool> canReachNetwork() async {
+    if (!await hasInterface()) return false;
+    return _dnsOpen(timeout: const Duration(milliseconds: 1500));
+  }
 
   Stream<List<ConnectivityResult>> get changes =>
       _connectivity.onConnectivityChanged;

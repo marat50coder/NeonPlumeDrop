@@ -23,8 +23,6 @@ class SceneDelegate: FlutterSceneDelegate {
     willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
   ) {
-    super.scene(scene, willConnectTo: session, options: connectionOptions)
-
     if let response = connectionOptions.notificationResponse,
        let url = extractUrl(from: response.notification.request.content.userInfo) {
       persist(url)
@@ -32,6 +30,22 @@ class SceneDelegate: FlutterSceneDelegate {
       NSLog("[NPD.scene] cold-start push url captured")
       #endif
     }
+    for activity in connectionOptions.userActivities {
+      if activity.activityType == NSUserActivityTypeBrowsingWeb,
+         let url = activity.webpageURL?.absoluteString {
+        persist(url)
+        #if DEBUG
+        NSLog("[NPD.scene] cold-start universal link captured")
+        #endif
+      }
+    }
+    for context in connectionOptions.urlContexts {
+      persist(context.url.absoluteString)
+      #if DEBUG
+      NSLog("[NPD.scene] cold-start url scheme captured")
+      #endif
+    }
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
   }
 
   override func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {

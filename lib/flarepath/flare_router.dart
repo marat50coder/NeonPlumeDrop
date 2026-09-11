@@ -80,15 +80,16 @@ class FlareRouter {
     // (b) getInitialMessage → vault.stashPushUrl
     // Drain BOTH before routing so a stale vault copy cannot fire on the
     // next AppLifecycleState.resumed (gray_flow_lessons.md §12).
-    final tapUrl = await OrbitTapReader.consume();
     final vaultUrl = await vault.consumePushUrl();
-    final coldUrl = (tapUrl != null && tapUrl.isNotEmpty) ? tapUrl : vaultUrl;
-    if (coldUrl != null && coldUrl.isNotEmpty) {
-      flareTrace(() => '[NPD.FLARE] cold-start push → $coldUrl');
+    await _pullCampaignTap();
+    if (vaultUrl != null &&
+        vaultUrl.isNotEmpty &&
+        !_isCampaignHost(vaultUrl)) {
+      flareTrace(() => '[NPD.FLARE] cold-start push → $vaultUrl');
       await vault.saveLane(OrbitLane.portal);
       unawaited(_backgroundDispatch());
       onProgress(1);
-      return PortalLanding(coldUrl, coldLaunch: true);
+      return PortalLanding(vaultUrl, coldLaunch: true);
     }
 
     onProgress(0.34);
@@ -115,7 +116,9 @@ class FlareRouter {
       _warmPulse(),
     ]);
     progress(0.62);
+    await _pullCampaignTap();
     await attribution.awaitSignals();
+    await _pullCampaignTap();
     progress(0.74);
     final reply = await _requestConfig();
     progress(1);
@@ -125,6 +128,12 @@ class FlareRouter {
     if (reply.hasDestination) {
       await vault.saveLane(OrbitLane.portal);
       return PortalLanding(reply.url!);
+    }
+    final fallback = _campaignWebFallback();
+    if (fallback != null) {
+      flareTrace(() => '[NPD.FLARE] first: config empty → campaign fallback');
+      await vault.saveLane(OrbitLane.portal);
+      return PortalLanding(fallback);
     }
     await vault.saveLane(OrbitLane.game);
     return const GameLanding();
@@ -155,15 +164,19 @@ class FlareRouter {
       attribution.ensureConsent(),
       _warmPulse(),
     ]);
+    await _pullCampaignTap();
     await attribution.awaitSignals(
       installTimeout: const Duration(
         milliseconds: FlareConfig.returningSignalTimeoutMs,
       ),
     );
+    await _pullCampaignTap();
     final reply = await _requestConfig();
     progress(1);
     if (reply.hasDestination) return PortalLanding(reply.url!);
     if (cached != null && !vault.cachedUrlExpired) return PortalLanding(cached);
+    final fallback = _campaignWebFallback();
+    if (fallback != null) return PortalLanding(fallback);
     return const VoidLanding(returnToGame: false);
   }
 
@@ -177,13 +190,58 @@ class FlareRouter {
       attribution.ensureConsent(),
       _warmPulse(),
     ]);
+    await _pullCampaignTap();
     await attribution.awaitSignals();
+    await _pullCampaignTap();
     final reply = await _requestConfig();
     progress(1);
-    if (!reply.hasDestination) return const GameLanding();
-    flareTrace(() => '[NPD.FLARE] mode flip game → portal');
-    await vault.saveLane(OrbitLane.portal);
-    return PortalLanding(reply.url!);
+    if (reply.hasDestination) {
+      flareTrace(() => '[NPD.FLARE] mode flip game → portal');
+      await vault.saveLane(OrbitLane.portal);
+      return PortalLanding(reply.url!);
+    }
+    final fallback = _campaignWebFallback();
+    if (fallback != null) {
+      await vault.saveLane(OrbitLane.portal);
+      return PortalLanding(fallback);
+    }
+    return const GameLanding();
+  }
+
+  Future<void> _pullCampaignTap() async {
+    final tap = await OrbitTapReader.consume();
+    if (tap == null || tap.isEmpty) return;
+    if (_isCampaignHost(tap)) {
+      flareTrace(() => '[NPD.FLARE] campaign tap → $tap');
+      attribution.ingestCampaignUrl(tap);
+      return;
+    }
+    await vault.stashPushUrl(tap);
+  }
+
+  String? campaignWebFallback() => _campaignWebFallback();
+
+  String? _campaignWebFallback() {
+    final raw = attribution.campaignFallbackUrl;
+    if (raw == null || raw.isEmpty) return null;
+    final uri = Uri.tryParse(raw);
+    if (uri == null) return raw;
+    for (final key in const <String>[
+      'af_web_dp',
+      'browser_fallback_url',
+      'deep_link_value',
+    ]) {
+      final value = uri.queryParameters[key];
+      if (value == null || value.isEmpty) continue;
+      final inner = Uri.tryParse(value);
+      if (inner != null &&
+          (inner.scheme == 'http' || inner.scheme == 'https') &&
+          inner.host.isNotEmpty) {
+        return inner.toString();
+      }
+    }
+    if (uri.scheme == 'http' || uri.scheme == 'https') return raw;
+    return null;
   }
 
   Future<FlareReply> _requestConfig({String? token}) async {
@@ -209,6 +267,19 @@ class FlareRouter {
       await attribution.awaitSignals();
       await _requestConfig();
     } catch (_) {}
+  }
+
+  Future<FlareReply> pullConfig({String? token}) => _requestConfig(token: token);
+
+  static bool isCampaignHost(String url) => _isCampaignHost(url);
+
+  static bool _isCampaignHost(String url) {
+    final lower = url.toLowerCase();
+    final host = FlareConfig.oneLinkHost.toLowerCase();
+    return lower.contains('onelink.me') ||
+        (host.isNotEmpty && lower.contains(host)) ||
+        lower.contains('appsflyer.com') ||
+        lower.startsWith('neonplumedrop:');
   }
 
   Future<void> refreshForToken(String token) => _refreshForToken(token);
