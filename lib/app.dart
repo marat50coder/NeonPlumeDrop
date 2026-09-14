@@ -62,9 +62,13 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
         _openPortal(router, tap);
         return;
       }
-    } else if (router.vault.lane == OrbitLane.open) {
-      return;
     }
+
+    // Gray WebView is already up. Re-POSTing config and pushing a new
+    // OrbitPortal reloads widget.url (the first partner page) and wipes
+    // whatever page the user had reached. Push taps are handled above.
+    if (router.vault.lane == OrbitLane.portal) return;
+    if (router.vault.lane == OrbitLane.open) return;
 
     try {
       await router.attribution.awaitSignals(

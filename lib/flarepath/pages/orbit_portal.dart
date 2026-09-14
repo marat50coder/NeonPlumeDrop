@@ -184,6 +184,7 @@ class _OrbitPortalState extends State<OrbitPortal> with WidgetsBindingObserver {
     return NavigationDelegate(
       onPageStarted: (url) {
         _lastMainUrl = url;
+        unawaited(widget.vault.cacheUrl(url, null));
       },
       onPageFinished: (_) {
         _redirectAttempts = 0;

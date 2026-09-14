@@ -7,10 +7,10 @@ abstract final class FlareConfig {
 
   /// 2d 19h 6m — under a 3-day clock jump so QA sees the invite again.
   static const int pushSnoozeSeconds = 241560;
-  static const int organicRecheckSeconds = 11;
+  static const int organicRecheckSeconds = 8;
   static const int savedUrlExpiryDays = 6;
   static const int exchangeTimeoutMs = 18400;
-  static const int installSignalTimeoutMs = 20000;
+  static const int installSignalTimeoutMs = 60000;
   static const int returningSignalTimeoutMs = 7100;
   static const int attPromptDelayMs = 540;
   static const int redirectLoopBudget = 2;

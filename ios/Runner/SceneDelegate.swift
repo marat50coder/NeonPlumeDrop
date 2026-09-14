@@ -1,18 +1,10 @@
 import Flutter
 import UIKit
 
-// Cold-start push tap capture — same two-channel contract as Bolt-of-Aether.
-//
-// iOS delivers a terminated-app notification tap through TWO channels:
-//   1. UNUserNotificationCenterDelegate — Firebase Proxy captures this and
-//      exposes it via `FirebaseMessaging.getInitialMessage()` on Dart.
-//   2. Scene connection options — `connectionOptions.notificationResponse`.
-//      Firebase does NOT intercept the scene lifecycle, so this is the
-//      redundant safety net when Firebase swizzling missed the delivery.
-//
-// Written to UserDefaults under `flutter.plume_orbit_tap`
-// (Dart key: `OrbitTapReader.dartKey`). Flutter's SharedPreferences
-// strips `flutter.`.
+// Cold-start push tap capture — same contract as Featherfield / Bolt.
+// Do NOT claim AppsFlyer Universal Links here: associated domains plus
+// handleOpen before the SDK starts intercept Safari clicks so OneLink
+// never records, then GCD comes back Organic / NOT_FOUND.
 
 class SceneDelegate: FlutterSceneDelegate {
   // Must stay in sync with `OrbitTapReader.dartKey`.
@@ -32,10 +24,10 @@ class SceneDelegate: FlutterSceneDelegate {
     }
     for activity in connectionOptions.userActivities {
       if activity.activityType == NSUserActivityTypeBrowsingWeb,
-         let url = activity.webpageURL?.absoluteString {
-        persist(url)
+         let url = activity.webpageURL {
+        persist(url.absoluteString)
         #if DEBUG
-        NSLog("[NPD.scene] cold-start universal link captured")
+        NSLog("[NPD.scene] cold-start web url captured")
         #endif
       }
     }
@@ -50,8 +42,8 @@ class SceneDelegate: FlutterSceneDelegate {
 
   override func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
     if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
-       let url = userActivity.webpageURL?.absoluteString {
-      persist(url)
+       let url = userActivity.webpageURL {
+      persist(url.absoluteString)
     }
     super.scene(scene, continue: userActivity)
   }
@@ -60,22 +52,12 @@ class SceneDelegate: FlutterSceneDelegate {
     _ scene: UIScene,
     openURLContexts URLContexts: Set<UIOpenURLContext>
   ) {
-    if let url = URLContexts.first?.url.absoluteString {
-      persist(url)
+    if let url = URLContexts.first?.url {
+      persist(url.absoluteString)
     }
     super.scene(scene, openURLContexts: URLContexts)
   }
 
-  // Payload URL extractor — MUST match Dart `FlarePulse._extract` so the
-  // terminated-tap path and the Firebase-swizzled path pick the SAME link.
-  // Historical bug: an "any string containing ://" catch-all loaded
-  // `fcm_options.image` / `image_url` instead of the campaign destination.
-  //
-  // Strict rules (Bolt):
-  //   • Only strings under one of the known URL keys count.
-  //   • Recurse into nested dictionaries (any depth).
-  //   • JSON-encoded blobs are parsed and rescanned, still key-restricted.
-  // `click_url` is first — partner pnsynd payloads use that key.
   private static let urlKeys: [String] = [
     "click_url", "clickUrl",
     "target", "url", "deep_link", "link", "deeplink", "destination",

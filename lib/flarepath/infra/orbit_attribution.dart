@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:appsflyer_sdk/appsflyer_sdk.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../config/flare_config.dart';
@@ -21,11 +22,26 @@ class OrbitAttribution {
   String? campaignFallbackUrl;
   Future<void>? _startFuture;
   Future<void>? _consentFuture;
-  Future<void>? _organicRefresh;
   final Completer<void> _installReady = Completer<void>();
   final Completer<void> _deepLinkReady = Completer<void>();
 
   Future<void> start() => _startFuture ??= _start();
+
+  /// True after AppsFlyer (or GCD) actually set `af_status`.
+  /// An identity-only POST must not commit the tester to the native game.
+  bool get hasConversionVerdict {
+    final status = _install?['af_status']?.toString() ?? '';
+    return status.isNotEmpty;
+  }
+
+  bool get isFirstLaunch {
+    final raw = _install?['is_first_launch'];
+    return raw == true || raw.toString() == 'true' || raw.toString() == '1';
+  }
+
+  bool get isOrganic {
+    return _install?['af_status']?.toString() == 'Organic';
+  }
 
   /// Consent is its own memoized future — not the SDK start — so a lost
   /// prompt during a route change can be retried after the app is frontmost.
@@ -37,16 +53,18 @@ class OrbitAttribution {
       return;
     }
     try {
-      // Start AF before ATT. Waiting for the prompt first is why UDL
-      // comes back NOT_FOUND on a OneLink open — the SDK is still dark.
+      // Same boot as Featherfield / Embercrest: ATT, then initSdk with no
+      // manualStart and IDFA left on. Simulator ATT is usually denied —
+      // disableAdvertisingIdentifier there made AF drop the App Store
+      // click and lock Organic. timeToWait lets the SDK attach IDFA if
+      // the user taps Allow a moment later.
+      await ensureConsent();
       final sdk = AppsflyerSdk(
         AppsFlyerOptions(
           afDevKey: FlareConfig.appsFlyerKey,
           appId: FlareConfig.iosStoreId,
-          showDebug: false,
+          showDebug: kDebugMode,
           timeToWaitForATTUserAuthorization: 60,
-          disableAdvertisingIdentifier: false,
-          manualStart: true,
         ),
       );
       _sdk = sdk;
@@ -71,30 +89,22 @@ class OrbitAttribution {
         registerOnAppOpenAttributionCallback: true,
         registerOnDeepLinkingCallback: true,
       );
-      try {
-        sdk.performOnDeepLinking();
-      } catch (_) {}
-      sdk.startSDK(
-        onSuccess: () => flareTrace(() => '[NPD.ORBIT] start ok'),
-        onError: (int code, String msg) =>
-            flareTrace(() => '[NPD.ORBIT] start $code $msg'),
-      );
-      unawaited(_syncAttAfterStart(sdk));
+      // `performOnDeepLinking` is an Android-only channel method in the
+      // Flutter plugin. On iOS every cold start threw an unhandled
+      // MissingPluginException — the sync `try/catch` couldn't see the
+      // MethodChannel Future rejection, so the isolate reported a crash
+      // even though the SDK itself was fine. Skip on iOS and treat the
+      // Future rejection as no-op elsewhere.
+      if (!Platform.isIOS) {
+        unawaited(
+          Future(() => sdk.performOnDeepLinking()).catchError((_) {}),
+        );
+      }
+      flareTrace(() => '[NPD.ORBIT] init ok');
     } catch (error) {
       flareTrace(() => '[NPD.ORBIT] initialization failed: $error');
       _completeEmpty();
     }
-  }
-
-  Future<void> _syncAttAfterStart(AppsflyerSdk sdk) async {
-    await ensureConsent();
-    if (!Platform.isIOS) return;
-    try {
-      final granted =
-          await AppTrackingTransparency.trackingAuthorizationStatus ==
-              TrackingStatus.authorized;
-      if (!granted) sdk.setDisableAdvertisingIdentifiers(true);
-    } catch (_) {}
   }
 
   Future<void> _askConsent() async {
@@ -132,33 +142,16 @@ class OrbitAttribution {
       );
       if (failed) {
         _install = <String, dynamic>{};
+      } else if (received['af_status'] == 'Organic') {
+        _install = await _rescuePaid(received) ?? received;
       } else {
         _install = received;
-        if (received['af_status'] == 'Organic') {
-          _organicRefresh ??= _recheckOrganic(received);
-        }
       }
     } catch (error) {
       flareTrace(() => '[NPD.ORBIT] conversion parse error: $error');
       _install = <String, dynamic>{};
     } finally {
       if (!_installReady.isCompleted) _installReady.complete();
-    }
-  }
-
-  Future<void> _recheckOrganic(Map<String, dynamic> received) async {
-    await Future<void>.delayed(
-      const Duration(seconds: FlareConfig.organicRecheckSeconds),
-    );
-    final gcd = await _fetchGcd();
-    if (gcd != null && gcd.isNotEmpty) {
-      flareTrace(
-        () => '[NPD.ORBIT] gcd af_status=${gcd['af_status']} '
-            'keys=${gcd.keys.toList()}',
-      );
-      _install = gcd;
-    } else {
-      _install = received;
     }
   }
 
@@ -176,15 +169,20 @@ class OrbitAttribution {
     query.forEach((key, value) {
       if (value.isNotEmpty) _deepLink![key] = value;
     });
+    if (uri.pathSegments.isNotEmpty) {
+      _deepLink!['shortlink'] ??= uri.pathSegments.last;
+    }
     final pid = query['pid'];
     if (pid != null && pid.isNotEmpty) {
-      _deepLink!['media_source'] ??= pid;
-      _deepLink!['af_status'] = 'Non-organic';
+      _deepLink!['media_source'] = pid;
     }
     final campaign = query['c'];
     if (campaign != null && campaign.isNotEmpty) {
-      _deepLink!['campaign'] ??= campaign;
+      _deepLink!['campaign'] = campaign;
     }
+    flareTrace(
+      () => '[NPD.ORBIT] ingested OneLink keys=${_deepLink!.keys.toList()}',
+    );
   }
 
   Map<String, dynamic> _flat(dynamic raw) {
@@ -205,27 +203,85 @@ class OrbitAttribution {
     return out;
   }
 
-  Future<Map<String, dynamic>?> _fetchGcd() async {
-    final uid = await appsFlyerId();
-    if (uid == null || uid.isEmpty) return null;
-    try {
-      final uri = Uri.parse(
-        '${FlareConfig.gcdBase}id${FlareConfig.iosStoreId}?device_id=$uid',
+  /// First callback is often Organic while the OneLink click is still
+  /// settling. Ask GCD again with AF UID and IDFA — the pull API accepts
+  /// either as `device_id`. Testers match on IDFA; a UID-only lookup
+  /// keeps returning the empty organic row.
+  Future<Map<String, dynamic>?> _rescuePaid(
+    Map<String, dynamic> organic,
+  ) async {
+    for (var pass = 0; pass < 3; pass++) {
+      await Future<void>.delayed(
+        Duration(seconds: FlareConfig.organicRecheckSeconds + pass * 4),
       );
-      final response = await _agent
-          .get(
-            uri,
-            headers: <String, String>{
-              'Authorization': 'Bearer ${FlareConfig.appsFlyerKey}',
-            },
-          )
-          .timeout(const Duration(milliseconds: 14200));
-      if (response.statusCode != 200) return null;
-      final decoded = jsonDecode(response.body);
-      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+      final gcd = await _fetchGcd();
+      flareTrace(
+        () => '[NPD.ORBIT] gcd pass=$pass af_status=${gcd?['af_status']} '
+            'keys=${gcd?.keys.toList()}',
+      );
+      if (gcd == null || gcd.isEmpty) continue;
+      final status = gcd['af_status']?.toString();
+      if (status != null && status.isNotEmpty && status != 'Organic') {
+        return gcd;
+      }
+    }
+    return organic;
+  }
+
+  Future<String?> _idfa() async {
+    if (!Platform.isIOS) return null;
+    try {
+      if (await AppTrackingTransparency.trackingAuthorizationStatus !=
+          TrackingStatus.authorized) {
+        return null;
+      }
+      final idfa = await AppTrackingTransparency.getAdvertisingIdentifier();
+      if (idfa.isEmpty || idfa.startsWith('00000000-')) return null;
+      return idfa;
     } catch (_) {
       return null;
     }
+  }
+
+  Future<Map<String, dynamic>?> _fetchGcd() async {
+    final uid = await appsFlyerId();
+    final idfa = await _idfa();
+    final devices = <String>[
+      if (uid != null && uid.isNotEmpty) uid,
+      if (idfa != null) idfa,
+    ];
+    if (devices.isEmpty) return null;
+    final base = FlareConfig.gcdBase;
+    final sep = base.contains('?') ? '&' : '?';
+    final key = FlareConfig.appsFlyerKey;
+    final uris = <Uri>[
+      for (final device in devices) ...<Uri>[
+        Uri.parse(
+          '$base${sep}app_id=${FlareConfig.iosStoreId}&device_id=$device'
+          '&devkey=$key',
+        ),
+        Uri.parse(
+          '${base}id${FlareConfig.iosStoreId}?device_id=$device&devkey=$key',
+        ),
+      ],
+    ];
+    for (final uri in uris) {
+      try {
+        final response = await _agent
+            .get(
+              uri,
+              headers: <String, String>{
+                'Authorization': 'Bearer $key',
+              },
+            )
+            .timeout(const Duration(milliseconds: 14200));
+        if (response.statusCode != 200) continue;
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map || decoded.isEmpty) continue;
+        return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return null;
   }
 
   Future<void> awaitSignals({Duration? installTimeout}) async {
@@ -241,10 +297,6 @@ class OrbitAttribution {
         onTimeout: () {},
       ),
     ]);
-    final refresh = _organicRefresh;
-    if (refresh != null) {
-      await refresh.timeout(const Duration(seconds: 16), onTimeout: () {});
-    }
   }
 
   Future<String?> appsFlyerId() async {
@@ -264,11 +316,27 @@ class OrbitAttribution {
     if (_reopen != null) {
       _reopen!.forEach((key, value) => body.putIfAbsent(key, () => value));
     }
-    // OneLink query wins over Organic GCD. putIfAbsent left pid / af_status
-    // stuck on Organic after a real click that iOS delivered as a URL.
     if (_deepLink != null) {
       _deepLink!.forEach((key, value) {
-        if (value != null) body[key] = value;
+        if (value == null) return;
+        // AppsFlyer UDL payload frequently carries the FULL click schema
+        // with EMPTY strings for fields the click didn't fill (campaign,
+        // media_source, af_sub1…). If we merge those over `_install` we
+        // wipe the real values that `onInstallConversionData` just gave
+        // us and the partner sees `sub_id_1=""`, showing its "params
+        // mismatch" placeholder instead of the real offer. Only accept a
+        // non-empty deep-link value, and never let it downgrade an
+        // already-filled install field.
+        final text = value.toString().trim();
+        if (text.isEmpty) return;
+        // Conversion / GCD owns the paid verdict. Do not overwrite it
+        // from a URL we parsed ourselves.
+        if (key == 'af_status' || key == 'af_message') return;
+        final existing = body[key];
+        if (existing != null && existing.toString().trim().isNotEmpty) {
+          return;
+        }
+        body[key] = value;
       });
     }
 
@@ -277,6 +345,7 @@ class OrbitAttribution {
     body['os'] = 'iOS';
     body['store_id'] = FlareConfig.storeToken;
     body['locale'] = locale;
+    _maskTablet(body);
     if (pushToken != null &&
         pushToken.isNotEmpty &&
         FlareConfig.firebaseProjectNumber.isNotEmpty) {
@@ -297,6 +366,28 @@ class OrbitAttribution {
     }
     flareTrace(() => '[NPD.ORBIT] payload ${jsonEncode(body)}');
     return body;
+  }
+
+  /// Partner config drops iPad / tablet rows. AF GCD still forwards
+  /// `device_type=iPad` from a real iPad, so the same Non-organic click
+  /// that opens gray on iPhone comes back 404 on iPad. Keep the HTTP UA
+  /// as iPhone and rewrite the type keys the backend actually reads.
+  void _maskTablet(Map<String, dynamic> body) {
+    const keys = <String>[
+      'device_type',
+      'af_device_type',
+      'device',
+      'model',
+      'device_model',
+      'hw_model',
+    ];
+    for (final key in keys) {
+      final value = body[key]?.toString().toLowerCase() ?? '';
+      if (value.contains('ipad') || value.contains('tablet')) {
+        body[key] = 'iPhone';
+      }
+    }
+    body['device_type'] = 'iPhone';
   }
 
   void _completeEmpty() {
