@@ -183,8 +183,11 @@ class _OrbitPortalState extends State<OrbitPortal> with WidgetsBindingObserver {
   NavigationDelegate _navigation() {
     return NavigationDelegate(
       onPageStarted: (url) {
+        // Only track the live URL for offline-retry. Do NOT cache every
+        // in-flow navigation as the portal destination — that made the
+        // next cold start reopen a deep page and skip the start page.
+        // The config reply URL is the only thing cached (FlareExchange).
         _lastMainUrl = url;
-        unawaited(widget.vault.cacheUrl(url, null));
       },
       onPageFinished: (_) {
         _redirectAttempts = 0;

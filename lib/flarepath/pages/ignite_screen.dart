@@ -100,10 +100,19 @@ class _IgniteScreenState extends State<IgniteScreen>
         ? 1 / 60
         : (elapsed - _lastTick).inMicroseconds / Duration.microsecondsPerSecond;
     _lastTick = elapsed;
-    final diff = _target - _shown;
-    if (diff <= 0) return;
-    final speed = min(2.2, max(0.14, diff * 3.2));
-    setState(() => _shown = min(_target, _shown + speed * dt));
+    // Always crawl. Stage callbacks can pause for seconds (AF Organic /
+    // GCD). A time-only curve that starts at 0 stays below the 44% stage
+    // for ~10s and looks frozen. Crawl from the current value at ~4%/s
+    // so the meter never stops; cap at 0.92 until finalize.
+    if (_navigating) {
+      final diff = _target - _shown;
+      if (diff <= 0) return;
+      setState(() => _shown = min(_target, _shown + min(2.2, max(0.14, diff * 3.2)) * dt));
+      return;
+    }
+    final cap = max(_target, 0.92);
+    if (_shown >= cap) return;
+    setState(() => _shown = min(cap, _shown + 0.04 * dt));
   }
 
   Future<void> _begin() async {
@@ -309,43 +318,48 @@ class _IgniteScreenState extends State<IgniteScreen>
         backgroundColor: Colors.black,
         body: ColoredBox(
           color: Colors.black,
-          child: SafeArea(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.asset(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Full-bleed art — no SafeArea, so no black letterbox bars in
+              // either orientation. The meter below still respects insets.
+              Positioned.fill(
+                child: Image.asset(
                   background,
                   fit: BoxFit.cover,
                   filterQuality: FilterQuality.high,
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: isPortrait ? 48 : 20,
-                  child: Center(
-                    child: SizedBox(
-                      width: isPortrait ? 280 : 360,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const _StrokeLabel(text: 'LOADING'),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            height: 22,
-                            width: double.infinity,
-                            child: CustomPaint(
-                              painter: _MeterPainter(_shown),
+              ),
+              Positioned.fill(
+                child: SafeArea(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: isPortrait ? 48 : 20),
+                      child: SizedBox(
+                        width: isPortrait ? 280 : 360,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const _StrokeLabel(text: 'LOADING'),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 22,
+                              width: double.infinity,
+                              child: CustomPaint(
+                                painter: _MeterPainter(_shown),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          _StrokeLabel(text: '$pct%', size: 14),
-                        ],
+                            const SizedBox(height: 8),
+                            _StrokeLabel(text: '$pct%', size: 14),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

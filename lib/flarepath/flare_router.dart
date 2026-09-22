@@ -86,13 +86,15 @@ class FlareRouter {
     await _warmPulse();
     onProgress(0.22);
 
-    // Cold-start push tap consumed FIRST — Bolt AetherWarmup contract:
+    // Cold-start push tap. Both channels can fire:
     // (a) SceneDelegate → OrbitTapReader
     // (b) getInitialMessage → vault.stashPushUrl
-    // Drain BOTH before routing so a stale vault copy cannot fire on the
-    // next AppLifecycleState.resumed (gray_flow_lessons.md §12).
-    final vaultUrl = await vault.consumePushUrl();
+    // Drain OrbitTapReader FIRST (it re-stashes a push tap into pending),
+    // THEN consume pending exactly once. Consuming last guarantees the
+    // pending key is empty afterwards, so the push URL cannot replay on
+    // the next 7-8 cold starts (the old order re-stashed it every launch).
     await _pullCampaignTap();
+    final vaultUrl = await vault.consumePushUrl();
     if (vaultUrl != null &&
         vaultUrl.isNotEmpty &&
         !_isCampaignHost(vaultUrl)) {
@@ -172,22 +174,28 @@ class FlareRouter {
       return const VoidLanding(returnToGame: false);
     }
     await _warmPulse();
-    unawaited(_backgroundDispatch());
+    // A fresh push tap on THIS launch wins over config.
     final pending = await vault.consumePushUrl();
     if (pending != null && pending.isNotEmpty) {
       progress(1);
       return PortalLanding(pending);
     }
-    final cached = await vault.savedUrl();
-    if (cached != null && !vault.cachedUrlExpired) {
-      progress(1);
-      return PortalLanding(cached);
-    }
 
+    final cached = await vault.savedUrl();
+    // Offline: the cached config URL is the only fallback so the user is
+    // not dumped to the nowifi screen with a live install.
     if (!await probe.canReachNetwork()) {
+      if (cached != null && !vault.cachedUrlExpired) {
+        progress(1);
+        return PortalLanding(cached);
+      }
       return const VoidLanding(returnToGame: false);
     }
-    progress(0.64);
+
+    // Online: ALWAYS re-ask config so a link changed on the backend takes
+    // effect on the next cold start. The cached URL is used only if the
+    // request fails — never as a shortcut that pins the old link forever.
+    progress(0.5);
     await Future.wait<void>(<Future<void>>[
       attribution.ensureConsent(),
       _warmPulse(),
@@ -203,9 +211,9 @@ class FlareRouter {
     final reply = await _requestConfig();
     progress(1);
     if (reply.hasDestination) return PortalLanding(reply.url!);
-    if (cached != null && !vault.cachedUrlExpired) return PortalLanding(cached);
     final fallback = _campaignWebFallback();
     if (fallback != null) return PortalLanding(fallback);
+    if (cached != null && !vault.cachedUrlExpired) return PortalLanding(cached);
     return const VoidLanding(returnToGame: false);
   }
 

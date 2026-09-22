@@ -70,7 +70,7 @@ class OrbitAttribution {
       _sdk = sdk;
       sdk.onInstallConversionData(_acceptInstall);
       sdk.onAppOpenAttribution((raw) {
-        _reopen = _flat(raw);
+        _reopen = _normalize(_flat(raw));
         if (!_deepLinkReady.isCompleted) _deepLinkReady.complete();
       });
       sdk.onDeepLinking((result) {
@@ -80,7 +80,7 @@ class OrbitAttribution {
               'keys=${event?.keys.toList()}',
         );
         if (event != null && event.isNotEmpty) {
-          _deepLink = Map<String, dynamic>.from(event);
+          _deepLink = _normalize(Map<String, dynamic>.from(event));
         }
         if (!_deepLinkReady.isCompleted) _deepLinkReady.complete();
       });
@@ -132,7 +132,7 @@ class OrbitAttribution {
 
   Future<void> _acceptInstall(dynamic raw) async {
     try {
-      final received = _flat(raw);
+      final received = _normalize(_flat(raw));
       final status = received['status']?.toString().toLowerCase();
       final failed = status == 'failure' ||
           (received['af_status'] == null && received.containsKey('status'));
@@ -141,15 +141,19 @@ class OrbitAttribution {
             'af_status=${received['af_status']} keys=${received.keys.toList()}',
       );
       if (failed) {
-        _install = <String, dynamic>{};
-      } else if (received['af_status'] == 'Organic') {
-        _install = await _rescuePaid(received) ?? received;
+        _install ??= <String, dynamic>{};
       } else {
-        _install = received;
+        // A later Organic / thin callback (is_first_launch=0) must not
+        // wipe a Non-organic row — that is how campaign / af_sub* vanished
+        // from the config POST.
+        _install = _preferRicher(_install, received);
+        if (!_isPaid(_install) && received['af_status'] == 'Organic') {
+          unawaited(_rescuePaidInBackground(received));
+        }
       }
     } catch (error) {
       flareTrace(() => '[NPD.ORBIT] conversion parse error: $error');
-      _install = <String, dynamic>{};
+      _install ??= <String, dynamic>{};
     } finally {
       if (!_installReady.isCompleted) _installReady.complete();
     }
@@ -165,20 +169,12 @@ class OrbitAttribution {
     if (uri.fragment.contains('=')) {
       query.addAll(Uri.splitQueryString(uri.fragment));
     }
-    _deepLink ??= <String, dynamic>{};
-    query.forEach((key, value) {
-      if (value.isNotEmpty) _deepLink![key] = value;
+    _deepLink = _normalize(<String, dynamic>{
+      ...?_deepLink,
+      ...query,
     });
     if (uri.pathSegments.isNotEmpty) {
       _deepLink!['shortlink'] ??= uri.pathSegments.last;
-    }
-    final pid = query['pid'];
-    if (pid != null && pid.isNotEmpty) {
-      _deepLink!['media_source'] = pid;
-    }
-    final campaign = query['c'];
-    if (campaign != null && campaign.isNotEmpty) {
-      _deepLink!['campaign'] = campaign;
     }
     flareTrace(
       () => '[NPD.ORBIT] ingested OneLink keys=${_deepLink!.keys.toList()}',
@@ -188,7 +184,7 @@ class OrbitAttribution {
   Map<String, dynamic> _flat(dynamic raw) {
     if (raw is! Map) return <String, dynamic>{};
     final map = Map<String, dynamic>.from(raw);
-    final payload = map['payload'];
+    final payload = map['payload'] ?? map['data'];
     if (payload is Map) return Map<String, dynamic>.from(payload);
     final out = <String, dynamic>{};
     map.forEach((key, value) {
@@ -203,10 +199,98 @@ class OrbitAttribution {
     return out;
   }
 
+  bool _isBlank(dynamic value) {
+    if (value == null) return true;
+    final text = value.toString().trim();
+    if (text.isEmpty) return true;
+    final lower = text.toLowerCase();
+    return lower == 'null' || lower == '<null>' || lower == 'nil';
+  }
+
+  bool _isPaid(Map<String, dynamic>? map) {
+    final status = map?['af_status']?.toString();
+    return status != null && status.isNotEmpty && status != 'Organic';
+  }
+
+  /// Drop AF placeholders and copy OneLink aliases (pid → media_source,
+  /// c → campaign) so config.php sees the same keys the dashboard uses.
+  Map<String, dynamic> _normalize(Map<String, dynamic> raw) {
+    final out = <String, dynamic>{};
+    raw.forEach((key, value) {
+      if (_isBlank(value)) return;
+      out[key] = value;
+    });
+    void alias(String from, String to) {
+      final value = out[from];
+      if (_isBlank(value)) return;
+      if (_isBlank(out[to])) out[to] = value;
+    }
+
+    alias('pid', 'media_source');
+    alias('c', 'campaign');
+    alias('af_channel', 'media_source');
+    alias('af_adset', 'adset');
+    alias('af_c_id', 'campaign_id');
+    alias('af_siteid', 'siteid');
+    return out;
+  }
+
+  Map<String, dynamic> _preferRicher(
+    Map<String, dynamic>? current,
+    Map<String, dynamic> incoming,
+  ) {
+    if (current == null || current.isEmpty) return incoming;
+    if (_isPaid(current) && !_isPaid(incoming)) {
+      final merged = Map<String, dynamic>.from(current);
+      incoming.forEach((key, value) {
+        if (key == 'af_status' || key == 'af_message') return;
+        if (_isBlank(merged[key]) && !_isBlank(value)) merged[key] = value;
+      });
+      return merged;
+    }
+    final merged = Map<String, dynamic>.from(current);
+    incoming.forEach((key, value) {
+      if (_isBlank(value)) return;
+      if (key == 'af_status' && _isPaid(current) && !_isPaid(incoming)) {
+        return;
+      }
+      if (_isBlank(merged[key]) || key == 'af_status' || key == 'af_message') {
+        merged[key] = value;
+      } else if (value.toString().length > merged[key].toString().length) {
+        // Keep the longer campaign / sub string when both are filled.
+        if (key == 'campaign' ||
+            key == 'media_source' ||
+            key.startsWith('af_sub') ||
+            key.startsWith('deep_link')) {
+          merged[key] = value;
+        }
+      }
+    });
+    return merged;
+  }
+
+  void _fillFrom(Map<String, dynamic> body, Map<String, dynamic> extra) {
+    extra.forEach((key, value) {
+      if (_isBlank(value)) return;
+      if (key == 'af_status' || key == 'af_message') return;
+      if (_isBlank(body[key])) body[key] = value;
+    });
+  }
+
   /// First callback is often Organic while the OneLink click is still
   /// settling. Ask GCD again with AF UID and IDFA — the pull API accepts
   /// either as `device_id`. Testers match on IDFA; a UID-only lookup
   /// keeps returning the empty organic row.
+  Future<void> _rescuePaidInBackground(Map<String, dynamic> organic) async {
+    final paid = await _rescuePaid(organic);
+    if (paid == null || !_isPaid(paid)) return;
+    _install = _preferRicher(_install, _normalize(paid));
+    flareTrace(
+      () => '[NPD.ORBIT] late paid after organic '
+          'af_status=${_install?['af_status']}',
+    );
+  }
+
   Future<Map<String, dynamic>?> _rescuePaid(
     Map<String, dynamic> organic,
   ) async {
@@ -312,33 +396,9 @@ class OrbitAttribution {
     String? pushToken,
   }) async {
     final body = <String, dynamic>{};
-    if (_install != null) body.addAll(_install!);
-    if (_reopen != null) {
-      _reopen!.forEach((key, value) => body.putIfAbsent(key, () => value));
-    }
-    if (_deepLink != null) {
-      _deepLink!.forEach((key, value) {
-        if (value == null) return;
-        // AppsFlyer UDL payload frequently carries the FULL click schema
-        // with EMPTY strings for fields the click didn't fill (campaign,
-        // media_source, af_sub1…). If we merge those over `_install` we
-        // wipe the real values that `onInstallConversionData` just gave
-        // us and the partner sees `sub_id_1=""`, showing its "params
-        // mismatch" placeholder instead of the real offer. Only accept a
-        // non-empty deep-link value, and never let it downgrade an
-        // already-filled install field.
-        final text = value.toString().trim();
-        if (text.isEmpty) return;
-        // Conversion / GCD owns the paid verdict. Do not overwrite it
-        // from a URL we parsed ourselves.
-        if (key == 'af_status' || key == 'af_message') return;
-        final existing = body[key];
-        if (existing != null && existing.toString().trim().isNotEmpty) {
-          return;
-        }
-        body[key] = value;
-      });
-    }
+    if (_install != null) body.addAll(_normalize(_install!));
+    if (_reopen != null) _fillFrom(body, _normalize(_reopen!));
+    if (_deepLink != null) _fillFrom(body, _normalize(_deepLink!));
 
     body['af_id'] = await appsFlyerId() ?? body['af_id'] ?? '';
     body['bundle_id'] = FlareConfig.bundleId;

@@ -113,6 +113,7 @@ class SettingsScreen extends StatelessWidget {
                     builder: (_) => SimpleWebViewScreen(
                       title: 'Support',
                       url: kSupportUrl,
+                      fillPage: true,
                     ),
                   ),
                 ),
