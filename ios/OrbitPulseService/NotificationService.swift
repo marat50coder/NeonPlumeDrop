@@ -4,32 +4,36 @@ import UserNotifications
 /// Firebase is not linked here — loading it in the extension stalls
 /// delivery (~30s) and iOS drops a second simultaneous push.
 ///
-/// Each `didReceive` captures its own `contentHandler`. The extension
-/// process is reused; an instance-level "already delivered" flag would
-/// swallow every push after the first.
+/// Every request keeps its own state (`Pending`) so two pushes handled
+/// on the same extension instance never clobber each other. The old
+/// single instance-level `deliver` / `draft` pair could hand push A's
+/// content to push B's handler on `serviceExtensionTimeWillExpire`.
 final class NotificationService: UNNotificationServiceExtension {
-  private var deliver: ((UNNotificationContent) -> Void)?
-  private var draft: UNMutableNotificationContent?
-  private var transfer: URLSessionDownloadTask?
+  private var pending: [ObjectIdentifier: Pending] = [:]
 
   override func didReceive(
     _ request: UNNotificationRequest,
     withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
   ) {
-    transfer?.cancel()
-    transfer = nil
+    let key = ObjectIdentifier(request)
+    Self.log("didReceive id=\(request.identifier) collapse=\(request.content.userInfo["apns-collapse-id"] ?? "-")")
 
-    guard let draft = request.content.mutableCopy() as? UNMutableNotificationContent else {
+    guard
+      let draft = request.content.mutableCopy() as? UNMutableNotificationContent
+    else {
+      Self.log("mutableCopy failed — delivering original")
       contentHandler(request.content)
       return
     }
-    self.draft = draft
 
     let once = OnceGate(contentHandler)
-    deliver = { once.fire($0) }
+    let record = Pending(once: once, draft: draft, task: nil)
+    pending[key] = record
 
     guard let picture = Self.pictureURL(from: request.content.userInfo) else {
+      Self.log("no picture url — delivering plain banner id=\(request.identifier)")
       once.fire(draft)
+      pending.removeValue(forKey: key)
       return
     }
 
@@ -38,25 +42,51 @@ final class NotificationService: UNNotificationServiceExtension {
     config.timeoutIntervalForResource = 2.8
     config.waitsForConnectivity = false
     let session = URLSession(configuration: config)
-    let task = session.downloadTask(with: picture) { location, response, _ in
-      if let location {
+    let task = session.downloadTask(with: picture) { [weak self] location, response, error in
+      if let error {
+        Self.log("picture download failed: \(error.localizedDescription)")
+      } else if let location {
         Self.pinPicture(location, response: response, source: picture, onto: draft)
+        Self.log("picture attached id=\(request.identifier)")
       }
       once.fire(draft)
+      self?.pending.removeValue(forKey: key)
     }
-    transfer = task
+    record.task = task
     task.resume()
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3.1) {
+    // Per-request 3.1s ceiling: iOS gives ~30s but we prefer to hand
+    // the banner over fast even if the CDN is slow. Never touches
+    // another push's state — everything is captured locally.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.1) { [weak self] in
       task.cancel()
       once.fire(draft)
+      self?.pending.removeValue(forKey: key)
     }
   }
 
   override func serviceExtensionTimeWillExpire() {
-    transfer?.cancel()
-    if let deliver, let draft {
-      deliver(draft)
+    Self.log("timeWillExpire — flushing \(pending.count) pending push(es)")
+    for record in pending.values {
+      record.task?.cancel()
+      record.once.fire(record.draft)
+    }
+    pending.removeAll()
+  }
+
+  private final class Pending {
+    let once: OnceGate
+    let draft: UNMutableNotificationContent
+    var task: URLSessionDownloadTask?
+
+    init(
+      once: OnceGate,
+      draft: UNMutableNotificationContent,
+      task: URLSessionDownloadTask?
+    ) {
+      self.once = once
+      self.draft = draft
+      self.task = task
     }
   }
 
@@ -123,6 +153,13 @@ final class NotificationService: UNNotificationServiceExtension {
     if mime.contains("png") { return "png" }
     if mime.contains("gif") { return "gif" }
     return "jpg"
+  }
+
+  /// Prefix used by the reader — filter Xcode console with `[NPD.nse]`
+  /// to see every push APNs actually delivered to this device, whether
+  /// or not Flutter later saw it.
+  private static func log(_ message: String) {
+    NSLog("[NPD.nse] %@", message)
   }
 }
 

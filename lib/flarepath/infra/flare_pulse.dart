@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import '../../core/notification_service.dart';
 import '../config/flare_config.dart';
 import '../core/flare_log.dart';
+import 'orbit_tap_reader.dart';
 import 'plume_vault.dart';
 
 @pragma('vm:entry-point')
@@ -38,6 +40,12 @@ class FlarePulse {
 
   String? get token => _token;
 
+  /// Completes the first time a push URL is stashed via `_dispatch`.
+  /// `_boot()` awaits this on cold-start-from-notification launches so the
+  /// router never proceeds to config while Firebase is still delivering
+  /// the tap payload via `onMessageOpenedApp`.
+  Completer<void>? _lateTapWaiter;
+
   Future<void> boot() => _bootFuture ??= _boot();
 
   Future<void> _boot() async {
@@ -58,8 +66,14 @@ class FlarePulse {
     } catch (_) {}
 
     try {
+      NotificationService.instance.onPushBannerTap = (url) {
+        flareTrace(() => '[NPD.pulse] local banner tap url=$url');
+        unawaited(_dispatch(url));
+      };
+      unawaited(NotificationService.instance.init());
       FirebaseMessaging.onMessage.listen((msg) {
         flareTrace(() => '[NPD.pulse] onMessage fg payload=${msg.data}');
+        _handleForegroundMessage(msg);
       });
       FirebaseMessaging.onMessageOpenedApp.listen((msg) {
         flareTrace(() => '[NPD.pulse] onMessageOpenedApp payload=${msg.data}');
@@ -86,28 +100,144 @@ class FlarePulse {
 
     unawaited(_claimToken(messaging));
 
-    try {
-      final initial = await messaging.getInitialMessage().timeout(
-        const Duration(seconds: 4),
-        onTimeout: () => null,
-      );
-      if (initial == null) {
-        flareTrace(() => '[NPD.pulse] getInitialMessage=null');
-      } else {
-        flareTrace(() => '[NPD.pulse] getInitialMessage payload=${initial.data}');
-        final url = _extract(initial.data);
-        if (url != null) {
-          flareTrace(() => '[NPD.pulse] getInitialMessage url=$url');
-          await _vault.stashPushUrl(url);
-        } else {
-          flareTrace(() => '[NPD.pulse] getInitialMessage: no url in payload');
-        }
+    // SceneDelegate flags a cold-start-from-notification BEFORE Dart boots.
+    // If the flag is set, we know a push tap woke the app and are prepared
+    // to wait for its URL — Firebase on iOS occasionally delivers the
+    // payload via `onMessageOpenedApp` a beat AFTER getInitialMessage()
+    // returns null, which used to cause the router to open config first
+    // and the tap URL to arrive too late.
+    final coldNotif = await OrbitTapReader.consumeColdNotificationFlag();
+    if (coldNotif) {
+      final dump = await OrbitTapReader.consumeColdNotificationDump();
+      flareTrace(() => '[NPD.pulse] cold notification tap detected');
+      if (dump != null && dump.isNotEmpty) {
+        flareTrace(() => '[NPD.pulse] cold notification payload=$dump');
       }
-    } catch (error) {
-      flareTrace(() => '[NPD.pulse] getInitialMessage failed: $error');
+      _lateTapWaiter = Completer<void>();
+    }
+
+    // Poll getInitialMessage. Firebase iOS occasionally returns null on
+    // the very first call because its internal proxy hasn't stored the
+    // message yet — retry with backoff when SceneDelegate confirmed a
+    // cold-notification tap. Non-cold-notif launches still do one probe
+    // so a stray terminated-tap iOS delivers without setting our flag is
+    // still caught.
+    await _pollGetInitialMessage(
+      messaging,
+      retries: coldNotif ? 5 : 1,
+    );
+
+    // If getInitialMessage never yielded a URL, give onMessageOpenedApp a
+    // window to fire — some iOS launches route the tap through that
+    // callback instead of the initial-message API.
+    final waiter = _lateTapWaiter;
+    if (coldNotif && waiter != null && !waiter.isCompleted) {
+      flareTrace(() => '[NPD.pulse] waiting up to 3.5s for late tap URL');
+      await waiter.future.timeout(
+        const Duration(milliseconds: 3500),
+        onTimeout: () {
+          flareTrace(() => '[NPD.pulse] late tap URL never arrived');
+        },
+      );
     }
 
     flareTrace(() => '[NPD.pulse] boot complete');
+  }
+
+  Future<void> _pollGetInitialMessage(
+    FirebaseMessaging messaging, {
+    required int retries,
+  }) async {
+    const List<int> gapsMs = <int>[0, 350, 600, 900, 1200];
+    for (var attempt = 0; attempt < retries; attempt++) {
+      if (attempt > 0) {
+        final gap = gapsMs[attempt < gapsMs.length ? attempt : gapsMs.length - 1];
+        await Future<void>.delayed(Duration(milliseconds: gap));
+      }
+      try {
+        final message = await messaging.getInitialMessage().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => null,
+        );
+        if (message == null) {
+          flareTrace(
+            () => '[NPD.pulse] getInitialMessage=null attempt=${attempt + 1}/'
+                '$retries',
+          );
+          continue;
+        }
+        flareTrace(
+          () => '[NPD.pulse] getInitialMessage attempt=${attempt + 1} '
+              'payload=${message.data}',
+        );
+        final url = _extract(message.data);
+        if (url != null) {
+          flareTrace(() => '[NPD.pulse] getInitialMessage url=$url');
+          await _vault.stashPushUrl(url);
+          _completeLateTap();
+          return;
+        }
+        flareTrace(
+          () => '[NPD.pulse] getInitialMessage: no url in payload '
+              '(attempt=${attempt + 1})',
+        );
+      } catch (error) {
+        flareTrace(
+          () => '[NPD.pulse] getInitialMessage failed attempt=${attempt + 1}: '
+              '$error',
+        );
+      }
+    }
+  }
+
+  void _completeLateTap() {
+    final waiter = _lateTapWaiter;
+    if (waiter != null && !waiter.isCompleted) waiter.complete();
+  }
+
+  /// iOS suppresses the system banner for data-only pushes even with
+  /// `setForegroundNotificationPresentationOptions(alert: true)` — the
+  /// alert flag only applies when the payload carries a `notification`
+  /// block. Raise a local notification ourselves so a foreground data
+  /// -only push (`{data: {url: …}}`) still gives the user something to
+  /// tap. If Firebase already handed us a `notification` block, iOS is
+  /// showing the banner itself and we must not double it.
+  void _handleForegroundMessage(RemoteMessage msg) {
+    if (msg.notification != null) return;
+    final url = _extract(msg.data);
+    if (url == null || url.isEmpty) return;
+    final title = _firstNonEmpty(msg.data, const <String>[
+      'title',
+      'notification_title',
+      'aps_title',
+    ]);
+    final body = _firstNonEmpty(msg.data, const <String>[
+      'body',
+      'message',
+      'text',
+      'notification_body',
+      'aps_body',
+    ]);
+    flareTrace(
+      () => '[NPD.pulse] foreground data-only push → local banner url=$url',
+    );
+    unawaited(
+      NotificationService.instance.showPushBanner(
+        title: title ?? 'Neon Plume Drop',
+        body: body ?? '',
+        url: url,
+      ),
+    );
+  }
+
+  String? _firstNonEmpty(Map<String, dynamic> payload, List<String> keys) {
+    for (final key in keys) {
+      final value = payload[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return null;
   }
 
   /// Persist FIRST, then the live callback. Covers the race where a
@@ -117,6 +247,7 @@ class FlarePulse {
     try {
       await _vault.stashPushUrl(url);
     } catch (_) {}
+    _completeLateTap();
     final callback = onDestination;
     if (callback != null) {
       flareTrace(() => '[NPD.pulse] dispatch → live callback');
