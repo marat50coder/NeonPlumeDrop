@@ -123,7 +123,7 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Center(
             child: Text(
-              'Neon Plume Drop v1.0.3',
+              'Neon Plume Drop v1.0.1',
               style: NeonTextStyles.body.copyWith(
                 color: Colors.white38,
                 fontSize: 12,
