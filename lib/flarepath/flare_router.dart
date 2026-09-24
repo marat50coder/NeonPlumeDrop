@@ -139,6 +139,16 @@ class FlareRouter {
     progress(0.74);
     final reply = await _requestConfig();
     progress(1);
+    // Push URL may have arrived via onMessageOpenedApp DURING _requestConfig
+    // (Firebase iOS is racy on cold-start-from-tap and can deliver the
+    // payload after boot's late-tap window). Prefer it over the base config
+    // URL — otherwise a tap on a promo push opens the site's landing page.
+    final latePush = await _drainLatePushUrl();
+    if (latePush != null) {
+      flareTrace(() => '[NPD.FLARE] first: late push tap → $latePush');
+      await vault.saveLane(OrbitLane.portal);
+      return PortalLanding(latePush, coldLaunch: true);
+    }
     flareTrace(
       () => '[NPD.FLARE] first: hasDest=${reply.hasDestination} url=${reply.url} '
           'verdict=${attribution.hasConversionVerdict}',
@@ -210,6 +220,13 @@ class FlareRouter {
     _armExchange();
     final reply = await _requestConfig();
     progress(1);
+    // See note in `_firstDecision` — a late push tap must win over the
+    // cached / config URL, otherwise the promo page never opens.
+    final latePush = await _drainLatePushUrl();
+    if (latePush != null) {
+      flareTrace(() => '[NPD.FLARE] returning: late push tap → $latePush');
+      return PortalLanding(latePush, coldLaunch: true);
+    }
     if (reply.hasDestination) return PortalLanding(reply.url!);
     final fallback = _campaignWebFallback();
     if (fallback != null) return PortalLanding(fallback);
@@ -233,6 +250,14 @@ class FlareRouter {
     _armExchange();
     final reply = await _requestConfig();
     progress(1);
+    // See note in `_firstDecision` — pick up a late push tap that raced
+    // with the config request so it does not open the base URL instead.
+    final latePush = await _drainLatePushUrl();
+    if (latePush != null) {
+      flareTrace(() => '[NPD.FLARE] game→portal: late push tap → $latePush');
+      await vault.saveLane(OrbitLane.portal);
+      return PortalLanding(latePush, coldLaunch: true);
+    }
     if (reply.hasDestination) {
       flareTrace(() => '[NPD.FLARE] mode flip game → portal');
       await vault.saveLane(OrbitLane.portal);
@@ -244,6 +269,21 @@ class FlareRouter {
       return PortalLanding(fallback);
     }
     return const GameLanding();
+  }
+
+  /// Drain any push URL that was stashed AFTER our initial cold-start
+  /// check — covers the race where `onMessageOpenedApp` fires during
+  /// `_requestConfig`. Also drains OrbitTapReader in case SceneDelegate
+  /// wrote a URL that we missed the first time around.
+  Future<String?> _drainLatePushUrl() async {
+    await _pullCampaignTap();
+    final url = await vault.consumePushUrl();
+    if (url == null || url.isEmpty) return null;
+    if (_isCampaignHost(url)) {
+      attribution.ingestCampaignUrl(url);
+      return null;
+    }
+    return url;
   }
 
   Future<void> _pullCampaignTap() async {

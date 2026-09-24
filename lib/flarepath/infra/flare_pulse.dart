@@ -113,28 +113,36 @@ class FlarePulse {
       if (dump != null && dump.isNotEmpty) {
         flareTrace(() => '[NPD.pulse] cold notification payload=$dump');
       }
-      _lateTapWaiter = Completer<void>();
     }
+    // Always create the waiter so a late `_dispatch` can wake anyone
+    // awaiting it. Even without SceneDelegate's flag we sometimes get a
+    // tap through `onMessageOpenedApp` — the flag can be missing when
+    // Firebase's UNUserNotificationCenter delegate ate the response
+    // before the scene connected.
+    _lateTapWaiter = Completer<void>();
 
     // Poll getInitialMessage. Firebase iOS occasionally returns null on
     // the very first call because its internal proxy hasn't stored the
     // message yet — retry with backoff when SceneDelegate confirmed a
-    // cold-notification tap. Non-cold-notif launches still do one probe
+    // cold-notification tap. Non-cold-notif launches still probe twice
     // so a stray terminated-tap iOS delivers without setting our flag is
     // still caught.
     await _pollGetInitialMessage(
       messaging,
-      retries: coldNotif ? 5 : 1,
+      retries: coldNotif ? 5 : 2,
     );
 
     // If getInitialMessage never yielded a URL, give onMessageOpenedApp a
     // window to fire — some iOS launches route the tap through that
-    // callback instead of the initial-message API.
+    // callback instead of the initial-message API. Wait longer when we
+    // know a notification tap woke the app; use a small insurance window
+    // otherwise so warm launches do not add extra latency.
     final waiter = _lateTapWaiter;
-    if (coldNotif && waiter != null && !waiter.isCompleted) {
-      flareTrace(() => '[NPD.pulse] waiting up to 3.5s for late tap URL');
+    if (waiter != null && !waiter.isCompleted) {
+      final windowMs = coldNotif ? 3500 : 1200;
+      flareTrace(() => '[NPD.pulse] waiting up to ${windowMs}ms for late tap URL');
       await waiter.future.timeout(
-        const Duration(milliseconds: 3500),
+        Duration(milliseconds: windowMs),
         onTimeout: () {
           flareTrace(() => '[NPD.pulse] late tap URL never arrived');
         },

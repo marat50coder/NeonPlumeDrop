@@ -86,7 +86,12 @@ class SceneDelegate: FlutterSceneDelegate {
 
   private func extractUrl(from userInfo: [AnyHashable: Any]) -> String? {
     guard let dict = userInfo as? [String: Any] else { return nil }
-    return scan(dict)
+    if let hit = scan(dict) { return hit }
+    // Last resort: some senders shove the URL under an ad-hoc key we do
+    // not know about. Rather than miss the tap, walk every string in the
+    // payload and pick the first `http(s)://` value. Skip the noisy
+    // Firebase / Google plumbing keys so we do not open telemetry links.
+    return httpScan(dict)
   }
 
   private func scan(_ dict: [String: Any]) -> String? {
@@ -102,6 +107,36 @@ class SceneDelegate: FlutterSceneDelegate {
       }
       if let stringified = value as? String, let hit = parseBlob(stringified) {
         return hit
+      }
+    }
+    return nil
+  }
+
+  private static let ignoredKeyPrefixes: [String] = [
+    "google.", "gcm.", "aps", "fcm_", "com.google.",
+  ]
+
+  private func httpScan(_ value: Any, keyPath: String = "") -> String? {
+    if let map = value as? [String: Any] {
+      for (key, nested) in map {
+        let path = keyPath.isEmpty ? key : "\(keyPath).\(key)"
+        if Self.ignoredKeyPrefixes.contains(where: { path.hasPrefix($0) }) {
+          continue
+        }
+        if let hit = httpScan(nested, keyPath: path) { return hit }
+      }
+      return nil
+    }
+    if let list = value as? [Any] {
+      for item in list {
+        if let hit = httpScan(item, keyPath: keyPath) { return hit }
+      }
+      return nil
+    }
+    if let text = value as? String {
+      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+        return trimmed
       }
     }
     return nil
