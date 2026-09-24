@@ -30,11 +30,23 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final router = widget.router;
+    if (router != null) {
+      // Background push tap on the native game screen has no live
+      // `onDestination` (OrbitPortal is not mounted). Wire a fallback so
+      // `_dispatch` still opens the intended URL instead of just
+      // stashing it in the vault and hoping someone picks it up.
+      router.pulse.onDestinationFallback = _onBackgroundPushUrl;
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final router = widget.router;
+    if (router != null && router.pulse.onDestinationFallback == _onBackgroundPushUrl) {
+      router.pulse.onDestinationFallback = null;
+    }
     super.dispose();
   }
 
@@ -43,6 +55,22 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
     if (state == AppLifecycleState.resumed) {
       unawaited(_catchCampaign());
     }
+  }
+
+  Future<void> _onBackgroundPushUrl(String url) async {
+    final router = widget.router;
+    if (router == null || url.isEmpty) return;
+    if (FlareRouter.isCampaignHost(url)) {
+      router.attribution.ingestCampaignUrl(url);
+      return;
+    }
+    // Flip lane BEFORE `_openPortal` so a resume-driven `_catchCampaign`
+    // that races with this dispatch sees `lane == portal` and does not
+    // replace our portal with a base-config URL.
+    try {
+      await router.vault.saveLane(OrbitLane.portal);
+    } catch (_) {}
+    _openPortal(router, url);
   }
 
   Future<void> _catchCampaign() async {
@@ -60,6 +88,22 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
         router.attribution.ingestCampaignUrl(tap);
       } else {
         _openPortal(router, tap);
+        return;
+      }
+    }
+
+    // Background push tap: Firebase stashes the URL in the vault via
+    // `_dispatch` when `onMessageOpenedApp` fires. If we won the race
+    // against `_dispatch` (resume callback fired first), give it a short
+    // window to deliver — otherwise `pullConfig` below would open the
+    // base URL and clobber the promo page the tap was meant to open.
+    final pushed = await _awaitBackgroundPushUrl(router);
+    if (pushed != null) {
+      if (FlareRouter.isCampaignHost(pushed)) {
+        router.attribution.ingestCampaignUrl(pushed);
+      } else {
+        await router.vault.saveLane(OrbitLane.portal);
+        _openPortal(router, pushed);
         return;
       }
     }
@@ -86,6 +130,23 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
         _openPortal(router, fallback);
       }
     } catch (_) {}
+  }
+
+  /// Poll the vault for a push URL that `_dispatch` may still be about
+  /// to write. Immediate check first (zero delay), then up to ~900ms of
+  /// short retries — Firebase iOS delivers `onMessageOpenedApp` within a
+  /// few hundred ms of the tap-driven resume in practice. Cheap enough
+  /// to run on every resume and avoids opening the base config URL on
+  /// top of a push tap.
+  Future<String?> _awaitBackgroundPushUrl(FlareRouter router) async {
+    for (var attempt = 0; attempt < 6; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+      final url = await router.vault.consumePushUrl();
+      if (url != null && url.isNotEmpty) return url;
+    }
+    return null;
   }
 
   void _openPortal(FlareRouter router, String url) {

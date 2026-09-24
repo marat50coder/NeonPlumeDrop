@@ -36,6 +36,11 @@ class FlarePulse {
   String? _token;
 
   void Function(String url)? onDestination;
+  /// Used when `onDestination` is not claimed by a live portal — e.g. the
+  /// user is in the native game and a background push tap wakes the app.
+  /// The router (or the top-level app) sets this so that a `_dispatch`
+  /// that would otherwise vanish still opens the intended URL.
+  void Function(String url)? onDestinationFallback;
   void Function(String token)? onTokenChanged;
 
   String? get token => _token;
@@ -256,15 +261,23 @@ class FlarePulse {
       await _vault.stashPushUrl(url);
     } catch (_) {}
     _completeLateTap();
-    final callback = onDestination;
-    if (callback != null) {
+    final live = onDestination;
+    if (live != null) {
       flareTrace(() => '[NPD.pulse] dispatch → live callback');
       try {
-        callback(url);
+        live(url);
       } catch (_) {}
-    } else {
-      flareTrace(() => '[NPD.pulse] dispatch → vault (no live cb)');
+      return;
     }
+    final fallback = onDestinationFallback;
+    if (fallback != null) {
+      flareTrace(() => '[NPD.pulse] dispatch → fallback callback');
+      try {
+        fallback(url);
+      } catch (_) {}
+      return;
+    }
+    flareTrace(() => '[NPD.pulse] dispatch → vault (no live cb)');
   }
 
   Future<void> _claimToken(
