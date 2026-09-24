@@ -188,9 +188,13 @@ class _OrbitPortalState extends State<OrbitPortal> with WidgetsBindingObserver {
         // next cold start reopen a deep page and skip the start page.
         // The config reply URL is the only thing cached (FlareExchange).
         _lastMainUrl = url;
+        // Install nav guards as early as possible — before the page's own
+        // scripts snapshot `window.open`. Handlers are idempotent.
+        _installNavGuards();
       },
       onPageFinished: (_) {
         _redirectAttempts = 0;
+        _installNavGuards();
         _installOrbitShell();
         Future<void>.delayed(
           const Duration(milliseconds: FlareConfig.pageSettleMs),
@@ -219,7 +223,14 @@ class _OrbitPortalState extends State<OrbitPortal> with WidgetsBindingObserver {
         );
       },
       onWebResourceError: (error) {
-        if (error.errorCode == -999) return;
+        // -999 = NSURLErrorCancelled (WebView cancelled an in-flight load,
+        // e.g. because user tapped a new link before the previous one
+        // finished). 102 = WebKitErrorFrameLoadInterruptedByPolicyChange
+        // (fires when we return NavigationDecision.prevent, e.g. for
+        // app-scheme hops that we redirect to embedded https). Neither
+        // is a real network error, treating them as offline would drop
+        // the user onto the void page mid-navigation.
+        if (error.errorCode == -999 || error.errorCode == 102) return;
         final mainFrame = error.isForMainFrame ?? true;
         final lower = error.description.toLowerCase();
         final redirectLoop = error.errorCode == -1007 ||
@@ -341,6 +352,114 @@ class _OrbitPortalState extends State<OrbitPortal> with WidgetsBindingObserver {
     );
   }
 
+  /// Navigation guards — force every `_blank` / `_new` target into the
+  /// current WebView. The webview_flutter plugin's built-in
+  /// `WKUIDelegate.onCreateWebView` loads such requests on a detached
+  /// WKWebView that is never mounted, so `target=_blank` links and
+  /// `window.open` calls silently do nothing. We intercept BEFORE the
+  /// site's own scripts snapshot `window.open`.
+  ///
+  /// Installed in both `onPageStarted` and `onPageFinished` — the guard
+  /// tags `document.documentElement` so double-installs are no-ops. A
+  /// MutationObserver keeps stripping `target` attributes on nodes that
+  /// the site inserts later (SPA transitions, framework hydration, …).
+  void _installNavGuards() {
+    _controller.runJavaScript(r'''
+(function(){
+  var root = document.documentElement;
+  if (!root || root.getAttribute('data-plume-nav') === '1') return;
+  root.setAttribute('data-plume-nav','1');
+  var openTargets = {'_blank':1, '_new':1, 'blank':1, 'new':1};
+  var isPopupTarget = function(t){
+    if (!t) return false;
+    return openTargets[String(t).toLowerCase()] === 1;
+  };
+  var strip = function(node){
+    if (!node || !node.getAttribute) return;
+    if (isPopupTarget(node.getAttribute('target'))) {
+      node.setAttribute('target', '_self');
+    }
+  };
+  var stripAll = function(){
+    var nodes;
+    try {
+      nodes = document.querySelectorAll(
+        'a[target="_blank"], a[target="_new"], ' +
+        'form[target="_blank"], form[target="_new"], ' +
+        'area[target="_blank"], area[target="_new"]'
+      );
+    } catch (e) { return; }
+    for (var i = 0; i < nodes.length; i++) strip(nodes[i]);
+  };
+  // Rewrite window.open so scripts that call it navigate in-place.
+  var nativeOpen = window.open;
+  window.open = function(u, name, features){
+    if (u) {
+      try { location.assign(u); return window; } catch (e) {}
+    }
+    // No URL — some sites use `var w=window.open();w.location=url`. Fall
+    // through to native so they get a real (albeit detached) window ref.
+    try { return nativeOpen.apply(window, arguments); }
+    catch (e) { return window; }
+  };
+  // Anchor click intercept — capture phase so we win over site handlers.
+  document.addEventListener('click', function(ev){
+    var node = ev.target;
+    while (node && node !== document && node.tagName !== 'A' && node.tagName !== 'AREA') {
+      node = node.parentNode;
+    }
+    if (!node || node === document) return;
+    if (!isPopupTarget(node.getAttribute && node.getAttribute('target'))) return;
+    var href = node.href;
+    if (!href) return;
+    ev.preventDefault();
+    try { location.assign(href); } catch (e) {}
+  }, true);
+  // Form submit intercept — rewrite target BEFORE submit fires. Covers
+  // partner "Next test" buttons that submit a form with target=_blank.
+  document.addEventListener('submit', function(ev){
+    var form = ev.target;
+    if (!form || !form.getAttribute) return;
+    if (isPopupTarget(form.getAttribute('target'))) {
+      form.setAttribute('target', '_self');
+    }
+  }, true);
+  // MutationObserver keeps SPA-injected nodes clean.
+  if (window.MutationObserver) {
+    var mo = new MutationObserver(function(list){
+      for (var i = 0; i < list.length; i++) {
+        var m = list[i];
+        if (m.type === 'attributes') { strip(m.target); continue; }
+        var added = m.addedNodes;
+        if (!added) continue;
+        for (var j = 0; j < added.length; j++) {
+          var n = added[j];
+          strip(n);
+          if (n && n.querySelectorAll) {
+            var kids = n.querySelectorAll(
+              'a[target], form[target], area[target]'
+            );
+            for (var k = 0; k < kids.length; k++) strip(kids[k]);
+          }
+        }
+      }
+    });
+    try {
+      mo.observe(document.documentElement || document, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['target']
+      });
+    } catch (e) {}
+  }
+  stripAll();
+  // Late sweep in case scripts add elements before MutationObserver was
+  // ready (rare, but the cost is zero).
+  window.setTimeout(stripAll, 400);
+  window.setTimeout(stripAll, 1600);
+})();
+''');
+  }
+
   void _installOrbitShell() {
     _controller.runJavaScript(r'''
 (function(){
@@ -413,25 +532,9 @@ class _OrbitPortalState extends State<OrbitPortal> with WidgetsBindingObserver {
     pinFields();
     pinRail();
   };
-  var follow = function(u){
-    if (!u) return;
-    try { location.assign(u); } catch (e) {}
-  };
-  window.open = function(u){
-    follow(u);
-    return window;
-  };
-  document.addEventListener('click', function(ev){
-    var node = ev.target;
-    while (node && node.tagName !== 'A') node = node.parentNode;
-    if (!node) return;
-    var t = (node.getAttribute('target') || '').toLowerCase();
-    if (t !== '_blank' && t !== '_new') return;
-    var href = node.href;
-    if (!href) return;
-    ev.preventDefault();
-    follow(href);
-  }, true);
+  // Navigation guards (window.open / target=_blank / form submits) live
+  // in `_installNavGuards` so they can be attached on `onPageStarted` —
+  // before the site's own scripts snapshot `window.open`.
   var wrapHist = function(name){
     var orig = history[name];
     if (typeof orig !== 'function') return;
