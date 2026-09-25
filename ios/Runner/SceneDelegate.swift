@@ -19,13 +19,9 @@ class SceneDelegate: FlutterSceneDelegate {
   // must open as a destination, not be re-attributed.
   private let pushUrlKey = "flutter.plume_orbit_push"
   // Set to `true` the moment iOS wakes the app from a notification tap.
-  // Dart reads it in FlarePulse to know it must wait a bit longer for
-  // the URL — Firebase on iOS sometimes delivers the payload via
-  // `onMessageOpenedApp` a beat AFTER `getInitialMessage()` returns.
   private let coldNotifKey = "flutter.plume_orbit_cold_notification"
-  // Full push payload JSON. Written whenever a cold-start tap arrived
-  // WITHOUT a resolvable URL — lets us see in the log what actually
-  // came through and confirm whether the sender included any URL field.
+  // Full push payload JSON — always written when a notification launches
+  // the scene, so Dart can log what really came through.
   private let coldNotifDumpKey = "flutter.plume_orbit_cold_notification_dump"
 
   override func scene(
@@ -37,19 +33,17 @@ class SceneDelegate: FlutterSceneDelegate {
       let userInfo = response.notification.request.content.userInfo
       let store = UserDefaults.standard
       store.set(true, forKey: coldNotifKey)
-      if let dump = dumpJson(userInfo) {
-        store.set(dump, forKey: coldNotifDumpKey)
-      }
-      if let url = extractUrl(from: userInfo) {
-        // Push destination — never routed through campaign attribution.
-        store.set(url, forKey: pushUrlKey)
-        #if DEBUG
-        NSLog("[NPD.scene] cold-start push url captured (push key)")
-        #endif
+      let dump = dumpJson(userInfo) ?? "<un-jsonable>"
+      store.set(dump, forKey: coldNotifDumpKey)
+      NSLog("[NPD.scene] cold-start notification userInfo=%@", dump)
+      if let extracted = Self.extractUrl(from: userInfo) {
+        store.set(extracted.url, forKey: pushUrlKey)
+        NSLog(
+          "[NPD.scene] cold-start push url captured via '%@' → %@",
+          extracted.source, extracted.url
+        )
       } else {
-        #if DEBUG
         NSLog("[NPD.scene] cold-start push HAD NO URL — payload dumped for Dart")
-        #endif
       }
       store.synchronize()
     }
@@ -57,16 +51,12 @@ class SceneDelegate: FlutterSceneDelegate {
       if activity.activityType == NSUserActivityTypeBrowsingWeb,
          let url = activity.webpageURL {
         persist(url.absoluteString)
-        #if DEBUG
-        NSLog("[NPD.scene] cold-start web url captured")
-        #endif
+        NSLog("[NPD.scene] cold-start web url captured %@", url.absoluteString)
       }
     }
     for context in connectionOptions.urlContexts {
       persist(context.url.absoluteString)
-      #if DEBUG
-      NSLog("[NPD.scene] cold-start url scheme captured")
-      #endif
+      NSLog("[NPD.scene] cold-start url scheme captured %@", context.url.absoluteString)
     }
     super.scene(scene, willConnectTo: session, options: connectionOptions)
   }
@@ -89,48 +79,65 @@ class SceneDelegate: FlutterSceneDelegate {
     super.scene(scene, openURLContexts: URLContexts)
   }
 
+  // MARK: - URL extraction
+
   private static let urlKeys: [String] = [
     "click_url", "clickUrl",
     "target", "url", "deep_link", "link", "deeplink", "destination",
   ]
 
-  private func extractUrl(from userInfo: [AnyHashable: Any]) -> String? {
-    guard let dict = userInfo as? [String: Any] else { return nil }
-    if let hit = scan(dict) { return hit }
-    // Last resort: some senders shove the URL under an ad-hoc key we do
-    // not know about. Rather than miss the tap, walk every string in the
-    // payload and pick the first `http(s)://` value. Skip the noisy
-    // Firebase / Google plumbing keys so we do not open telemetry links.
-    return httpScan(dict)
+  /// Non-URL-carrying keys that Firebase / Google plumbing owns. We skip
+  /// them in the last-resort http-scan to avoid opening telemetry links.
+  private static let ignoredKeyPrefixes: [String] = [
+    "google.", "gcm.", "aps", "fcm_", "com.google.",
+  ]
+
+  struct ExtractedUrl {
+    let url: String
+    let source: String
   }
 
-  private func scan(_ dict: [String: Any]) -> String? {
-    for key in Self.urlKeys {
+  static func extractUrl(from userInfo: [AnyHashable: Any]) -> ExtractedUrl? {
+    if let hit = scan(userInfo) { return hit }
+    return httpScan(userInfo)
+  }
+
+  private static func scan(
+    _ dict: [AnyHashable: Any],
+    keyPath: String = ""
+  ) -> ExtractedUrl? {
+    for key in urlKeys {
       if let raw = dict[key] as? String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
+        if !trimmed.isEmpty {
+          let source = keyPath.isEmpty ? key : "\(keyPath).\(key)"
+          return ExtractedUrl(url: trimmed, source: source)
+        }
       }
     }
-    for (_, value) in dict {
-      if let nested = value as? [String: Any], let hit = scan(nested) {
-        return hit
+    for (key, value) in dict {
+      let keyText = "\(key)"
+      let nextPath = keyPath.isEmpty ? keyText : "\(keyPath).\(keyText)"
+      if let nested = value as? [AnyHashable: Any] {
+        if let hit = scan(nested, keyPath: nextPath) { return hit }
       }
-      if let stringified = value as? String, let hit = parseBlob(stringified) {
+      if let stringified = value as? String,
+         let hit = parseBlob(stringified, keyPath: nextPath) {
         return hit
       }
     }
     return nil
   }
 
-  private static let ignoredKeyPrefixes: [String] = [
-    "google.", "gcm.", "aps", "fcm_", "com.google.",
-  ]
-
-  private func httpScan(_ value: Any, keyPath: String = "") -> String? {
-    if let map = value as? [String: Any] {
+  private static func httpScan(
+    _ value: Any,
+    keyPath: String = ""
+  ) -> ExtractedUrl? {
+    if let map = value as? [AnyHashable: Any] {
       for (key, nested) in map {
-        let path = keyPath.isEmpty ? key : "\(keyPath).\(key)"
-        if Self.ignoredKeyPrefixes.contains(where: { path.hasPrefix($0) }) {
+        let keyText = "\(key)"
+        let path = keyPath.isEmpty ? keyText : "\(keyPath).\(keyText)"
+        if ignoredKeyPrefixes.contains(where: { path.hasPrefix($0) }) {
           continue
         }
         if let hit = httpScan(nested, keyPath: path) { return hit }
@@ -146,20 +153,25 @@ class SceneDelegate: FlutterSceneDelegate {
     if let text = value as? String {
       let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
       if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-        return trimmed
+        return ExtractedUrl(url: trimmed, source: keyPath.isEmpty ? "<root>" : keyPath)
       }
     }
     return nil
   }
 
-  private func parseBlob(_ blob: String) -> String? {
+  private static func parseBlob(
+    _ blob: String,
+    keyPath: String
+  ) -> ExtractedUrl? {
     let trimmed = blob.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let data = trimmed.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data)
-            as? [String: Any]
+            as? [AnyHashable: Any]
     else { return nil }
-    return scan(json)
+    return scan(json, keyPath: keyPath)
   }
+
+  // MARK: - Universal link / URL scheme
 
   private func persist(_ url: String) {
     guard !url.isEmpty else { return }
