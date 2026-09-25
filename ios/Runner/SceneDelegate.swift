@@ -7,8 +7,17 @@ import UIKit
 // never records, then GCD comes back Organic / NOT_FOUND.
 
 class SceneDelegate: FlutterSceneDelegate {
+  // Universal Link / URL scheme tap. May carry a OneLink URL — the Dart
+  // side runs it through the AppsFlyer attribution filter before
+  // deciding whether to open it.
   // Must stay in sync with `OrbitTapReader.dartKey`.
   private let tapUrlKey = "flutter.plume_orbit_tap"
+  // Cold-start push notification tap URL. Kept SEPARATE from tapUrlKey
+  // because the AppsFlyer attribution filter (`_isCampaignHost`) would
+  // otherwise swallow OneLink promo URLs that the partner sent through
+  // FCM — the user explicitly tapped a notification with this URL, it
+  // must open as a destination, not be re-attributed.
+  private let pushUrlKey = "flutter.plume_orbit_push"
   // Set to `true` the moment iOS wakes the app from a notification tap.
   // Dart reads it in FlarePulse to know it must wait a bit longer for
   // the URL — Firebase on iOS sometimes delivers the payload via
@@ -32,9 +41,10 @@ class SceneDelegate: FlutterSceneDelegate {
         store.set(dump, forKey: coldNotifDumpKey)
       }
       if let url = extractUrl(from: userInfo) {
-        store.set(url, forKey: tapUrlKey)
+        // Push destination — never routed through campaign attribution.
+        store.set(url, forKey: pushUrlKey)
         #if DEBUG
-        NSLog("[NPD.scene] cold-start push url captured")
+        NSLog("[NPD.scene] cold-start push url captured (push key)")
         #endif
       } else {
         #if DEBUG

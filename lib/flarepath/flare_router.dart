@@ -67,6 +67,21 @@ class FlareRouter {
 
     flareTrace(() => '[NPD.FLARE] decide start lane=${vault.lane}');
 
+    // Cold-start push notification tap. SceneDelegate writes the URL to
+    // the `plume_orbit_push` UserDefaults slot BEFORE Dart boots. Read
+    // it FIRST — no Firebase round-trip, no reachability probe. If the
+    // user tapped a push, honour the URL as-is (even if the sender used
+    // a OneLink host — the AppsFlyer campaign filter is only for real
+    // browser / Universal Link taps, not for a push destination).
+    final pushTap = await OrbitTapReader.consumePushTap();
+    if (pushTap != null && pushTap.isNotEmpty) {
+      flareTrace(() => '[NPD.FLARE] cold-start push tap → $pushTap');
+      await vault.saveLane(OrbitLane.portal);
+      unawaited(_backgroundDispatch());
+      onProgress(1);
+      return PortalLanding(pushTap, coldLaunch: true);
+    }
+
     // Reachability BEFORE pulse.boot / getInitialMessage. A 4 s FCM wait
     // while airplane-mode is on would keep the loading bar on screen and
     // then dump the user into the native game. Do not consume a cold-start
@@ -77,28 +92,23 @@ class FlareRouter {
       return const VoidLanding(returnToGame: false);
     }
 
-    // Firebase getInitialMessage MUST resolve before we look for a
-    // cold-start URL — with FirebaseAppDelegateProxyEnabled=true Firebase
-    // eats the notification response and SceneDelegate may never see it,
-    // so OrbitTapReader alone returns null on the terminated-tap path.
+    // Firebase getInitialMessage — only a fallback for the rare case
+    // SceneDelegate missed the notification response (Firebase's UN
+    // delegate can eat it before scene connect on some cold starts).
     // boot() writes any initial-message URL into the vault we drain below.
     // Do NOT attach onTokenChanged yet — that POST raced ahead of AF.
     await _warmPulse();
     onProgress(0.22);
 
-    // Cold-start push tap. Both channels can fire:
-    // (a) SceneDelegate → OrbitTapReader
-    // (b) getInitialMessage → vault.stashPushUrl
-    // Drain OrbitTapReader FIRST (it re-stashes a push tap into pending),
-    // THEN consume pending exactly once. Consuming last guarantees the
-    // pending key is empty afterwards, so the push URL cannot replay on
-    // the next 7-8 cold starts (the old order re-stashed it every launch).
+    // OrbitTapReader = Universal Link / URL scheme tap (may be OneLink →
+    // real campaign attribution material). Push URLs use the separate
+    // slot drained above.
     await _pullCampaignTap();
+    // Vault is populated by `_dispatch` (Firebase live/late tap). It
+    // only holds push destinations — no campaign filter needed here.
     final vaultUrl = await vault.consumePushUrl();
-    if (vaultUrl != null &&
-        vaultUrl.isNotEmpty &&
-        !_isCampaignHost(vaultUrl)) {
-      flareTrace(() => '[NPD.FLARE] cold-start push → $vaultUrl');
+    if (vaultUrl != null && vaultUrl.isNotEmpty) {
+      flareTrace(() => '[NPD.FLARE] cold-start firebase push → $vaultUrl');
       await vault.saveLane(OrbitLane.portal);
       unawaited(_backgroundDispatch());
       onProgress(1);
@@ -273,16 +283,16 @@ class FlareRouter {
 
   /// Drain any push URL that was stashed AFTER our initial cold-start
   /// check — covers the race where `onMessageOpenedApp` fires during
-  /// `_requestConfig`. Also drains OrbitTapReader in case SceneDelegate
-  /// wrote a URL that we missed the first time around.
+  /// `_requestConfig`. Also drains OrbitTapReader for a late Universal
+  /// Link tap. Push URLs (from the SceneDelegate push slot and from
+  /// Firebase `_dispatch`) always win — the campaign filter is not
+  /// applied here because a user-initiated push tap must open as-is.
   Future<String?> _drainLatePushUrl() async {
+    final late = await OrbitTapReader.consumePushTap();
+    if (late != null && late.isNotEmpty) return late;
     await _pullCampaignTap();
     final url = await vault.consumePushUrl();
     if (url == null || url.isEmpty) return null;
-    if (_isCampaignHost(url)) {
-      attribution.ingestCampaignUrl(url);
-      return null;
-    }
     return url;
   }
 

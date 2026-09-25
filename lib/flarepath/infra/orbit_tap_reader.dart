@@ -3,7 +3,12 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OrbitTapReader {
+  /// Universal Link / URL scheme tap (may be OneLink → campaign filter).
   static const String dartKey = 'plume_orbit_tap';
+  /// Cold-start push notification tap. ALWAYS a destination — never
+  /// routed through the AppsFlyer campaign filter, even if it happens
+  /// to be a OneLink URL sent through FCM.
+  static const String pushKey = 'plume_orbit_push';
   static const String coldNotifKey = 'plume_orbit_cold_notification';
   static const String coldNotifDumpKey =
       'plume_orbit_cold_notification_dump';
@@ -12,9 +17,29 @@ class OrbitTapReader {
     if (!Platform.isIOS) return null;
     try {
       final preferences = await SharedPreferences.getInstance();
+      // Force a fresh read from UserDefaults — SharedPreferences caches
+      // values in-process, and SceneDelegate wrote AFTER our earliest
+      // getInstance() calls on some launches.
+      await preferences.reload();
       final value = preferences.getString(dartKey)?.trim();
       if (value == null || value.isEmpty) return null;
       await preferences.remove(dartKey);
+      return value;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Consume a cold-start PUSH notification URL. Callers must treat the
+  /// result as a destination and open it as-is, regardless of host.
+  static Future<String?> consumePushTap() async {
+    if (!Platform.isIOS) return null;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.reload();
+      final value = preferences.getString(pushKey)?.trim();
+      if (value == null || value.isEmpty) return null;
+      await preferences.remove(pushKey);
       return value;
     } catch (_) {
       return null;

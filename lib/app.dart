@@ -60,10 +60,10 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
   Future<void> _onBackgroundPushUrl(String url) async {
     final router = widget.router;
     if (router == null || url.isEmpty) return;
-    if (FlareRouter.isCampaignHost(url)) {
-      router.attribution.ingestCampaignUrl(url);
-      return;
-    }
+    // Push tap is always a user-selected destination. Do NOT run it
+    // through the campaign filter — a partner promo URL on OneLink is
+    // still a destination when delivered via a notification the user
+    // explicitly tapped.
     // Flip lane BEFORE `_openPortal` so a resume-driven `_catchCampaign`
     // that races with this dispatch sees `lane == portal` and does not
     // replace our portal with a base-config URL.
@@ -82,6 +82,18 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
       return;
     }
 
+    // Cold-start push tap that SceneDelegate wrote after resume (rare —
+    // usually the boot path picks it up first, but a resume-triggered
+    // scene reconnect can also land here). Push tap is always a
+    // destination, never campaign attribution.
+    final pushTap = await OrbitTapReader.consumePushTap();
+    if (pushTap != null && pushTap.isNotEmpty) {
+      await router.vault.saveLane(OrbitLane.portal);
+      _openPortal(router, pushTap);
+      return;
+    }
+
+    // Universal Link / URL scheme (may be a real OneLink → attribution).
     final tap = await OrbitTapReader.consume();
     if (tap != null && tap.isNotEmpty) {
       if (FlareRouter.isCampaignHost(tap)) {
@@ -92,20 +104,15 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
       }
     }
 
-    // Background push tap: Firebase stashes the URL in the vault via
-    // `_dispatch` when `onMessageOpenedApp` fires. If we won the race
-    // against `_dispatch` (resume callback fired first), give it a short
-    // window to deliver — otherwise `pullConfig` below would open the
-    // base URL and clobber the promo page the tap was meant to open.
+    // Background push tap via Firebase: `_dispatch` stashes the URL in
+    // the vault when `onMessageOpenedApp` fires. If we won the race
+    // (resume callback fired first), give it a short window to deliver.
+    // Never filter — push URLs are destinations even on OneLink.
     final pushed = await _awaitBackgroundPushUrl(router);
     if (pushed != null) {
-      if (FlareRouter.isCampaignHost(pushed)) {
-        router.attribution.ingestCampaignUrl(pushed);
-      } else {
-        await router.vault.saveLane(OrbitLane.portal);
-        _openPortal(router, pushed);
-        return;
-      }
+      await router.vault.saveLane(OrbitLane.portal);
+      _openPortal(router, pushed);
+      return;
     }
 
     // Gray WebView is already up. Re-POSTing config and pushing a new
