@@ -36,9 +36,14 @@ target 'Runner' do
   end
 end
 
+# The notification service extension links Firebase Messaging so that
+# `Messaging.serviceExtension().populateNotificationContent(...)` can
+# register every delivered push with Firebase — otherwise
+# `getInitialMessage()` returns null on cold-start-after-wait taps.
 target 'OrbitPulseService' do
   use_frameworks!
   platform :ios, '15.0'
+  pod 'Firebase/Messaging', '12.18.0'
 end
 
 post_install do |installer|
