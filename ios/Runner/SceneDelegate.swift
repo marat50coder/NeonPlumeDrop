@@ -36,15 +36,10 @@ class SceneDelegate: FlutterSceneDelegate {
       let dump = dumpJson(userInfo) ?? "<un-jsonable>"
       store.set(dump, forKey: coldNotifDumpKey)
       NSLog("[NPD.scene] cold-start notification userInfo=%@", dump)
-      if let extracted = Self.extractUrl(from: userInfo) {
-        store.set(extracted.url, forKey: pushUrlKey)
-        NSLog(
-          "[NPD.scene] cold-start push url captured via '%@' → %@",
-          extracted.source, extracted.url
-        )
-      } else {
-        NSLog("[NPD.scene] cold-start push HAD NO URL — payload dumped for Dart")
-      }
+      // Delegates to `PushCapture` — same slot the AppDelegate hook
+      // uses so Dart's single MethodChannel read picks up the URL no
+      // matter which iOS entry point delivered the tap.
+      PushCapture.store(userInfo)
       store.synchronize()
     }
     for activity in connectionOptions.userActivities {
