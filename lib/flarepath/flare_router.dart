@@ -67,53 +67,47 @@ class FlareRouter {
 
     flareTrace(() => '[NPD.FLARE] decide start lane=${vault.lane}');
 
-    // Cold-start push notification tap. SceneDelegate writes the URL to
-    // the `plume_orbit_push` UserDefaults slot BEFORE Dart boots. Read
-    // it FIRST — no Firebase round-trip, no reachability probe. If the
-    // user tapped a push, honour the URL as-is (even if the sender used
-    // a OneLink host — the AppsFlyer campaign filter is only for real
-    // browser / Universal Link taps, not for a push destination).
-    final pushTap = await OrbitTapReader.consumePushTap();
-    if (pushTap != null && pushTap.isNotEmpty) {
-      flareTrace(() => '[NPD.FLARE] cold-start push tap → $pushTap');
-      await vault.saveLane(OrbitLane.portal);
-      unawaited(_backgroundDispatch());
-      onProgress(1);
-      return PortalLanding(pushTap, coldLaunch: true);
-    }
-
-    // Reachability BEFORE pulse.boot / getInitialMessage. A 4 s FCM wait
-    // while airplane-mode is on would keep the loading bar on screen and
-    // then dump the user into the native game. Do not consume a cold-start
-    // tap URL here — keep it for the retry once the radio is up.
+    // Reachability check first — a 4s FCM wait in airplane mode would
+    // hold the splash then dump the user into the native game.
     if (!await probe.quickReach()) {
       flareTrace(() => '[NPD.FLARE] offline at boot → void');
       onProgress(1);
       return const VoidLanding(returnToGame: false);
     }
 
-    // Firebase getInitialMessage — only a fallback for the rare case
-    // SceneDelegate missed the notification response (Firebase's UN
-    // delegate can eat it before scene connect on some cold starts).
-    // boot() writes any initial-message URL into the vault we drain below.
-    // Do NOT attach onTokenChanged yet — that POST raced ahead of AF.
+    // Firebase getInitialMessage MUST resolve before we look for the
+    // cold-start URL. With FirebaseAppDelegateProxyEnabled = true
+    // (default) Firebase can consume the notification response and
+    // SceneDelegate never sees it, so the OrbitTapReader push slot
+    // alone returns null on those cold-start-from-tap paths. `_boot()`
+    // writes any initial-message URL into the same vault we drain below.
+    // Matches the Bolt-of-Aether NovaWarmup order — proven pattern.
     await _warmPulse();
     onProgress(0.22);
 
-    // OrbitTapReader = Universal Link / URL scheme tap (may be OneLink →
-    // real campaign attribution material). Push URLs use the separate
-    // slot drained above.
-    await _pullCampaignTap();
-    // Vault is populated by `_dispatch` (Firebase live/late tap). It
-    // only holds push destinations — no campaign filter needed here.
+    // Now drain BOTH cold-start URL slots:
+    //   (a) SceneDelegate push slot (`plume_orbit_push`) — user tapped a
+    //       notification from terminated state and iOS forwarded the
+    //       response to the scene delegate.
+    //   (b) Vault (`_dispatch` stashed it from Firebase's
+    //       getInitialMessage during _warmPulse, or a background tap
+    //       fired before the router got here).
+    // The URL is honoured as-is — no AppsFlyer campaign filter, even for
+    // OneLink hosts. Push URLs are always destinations.
+    final pushTap = await OrbitTapReader.consumePushTap();
     final vaultUrl = await vault.consumePushUrl();
-    if (vaultUrl != null && vaultUrl.isNotEmpty) {
-      flareTrace(() => '[NPD.FLARE] cold-start firebase push → $vaultUrl');
+    final coldPushUrl = pushTap ?? vaultUrl;
+    if (coldPushUrl != null && coldPushUrl.isNotEmpty) {
+      flareTrace(() => '[NPD.FLARE] cold-start push → $coldPushUrl');
       await vault.saveLane(OrbitLane.portal);
       unawaited(_backgroundDispatch());
       onProgress(1);
-      return PortalLanding(vaultUrl, coldLaunch: true);
+      return PortalLanding(coldPushUrl, coldLaunch: true);
     }
+
+    // Universal Link / URL scheme tap (may be a real OneLink click that
+    // should feed AppsFlyer attribution rather than open a portal).
+    await _pullCampaignTap();
 
     onProgress(0.34);
     return switch (vault.lane) {

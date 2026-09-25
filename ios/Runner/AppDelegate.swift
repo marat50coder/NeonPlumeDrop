@@ -1,20 +1,19 @@
 import Flutter
 import ObjectiveC
 import UIKit
-import UserNotifications
 import WebKit
 
-// Firebase auto-configures from GoogleService-Info.plist via firebase_core
-// (`FirebaseAppDelegateProxyEnabled = true`). We claim FlutterAppDelegate
-// as the `UNUserNotificationCenter` delegate BEFORE Firebase's plugin
-// registrar runs so that Firebase's swizzle chains to it — otherwise
-// `getInitialMessage()` returns null on "close app + wait + tap" cold
-// starts because Firebase never sees a delegate to hand the message to.
+// Deliberately minimal — matches the proven pattern from Bolt-of-Aether
+// and FeatherfieldFrenzy. Firebase auto-configures via firebase_core at
+// GeneratedPluginRegistrant time (`FirebaseAppDelegateProxyEnabled =
+// true` in Info.plist). Once the proxy is enabled Firebase installs
+// itself as the UNUserNotificationCenterDelegate so `getInitialMessage`
+// / `onMessageOpenedApp` fire correctly. Overriding that delegate here
+// — or calling `FirebaseApp.configure()` before plugin registration —
+// breaks the delivery chain (tapped pushes silently never reach Dart).
 //
-// APNs registration is kicked twice: once eagerly in
-// `didFinishLaunchingWithOptions` so a token can be minted on the very
-// first cold start, and once again after plugin registration so Firebase
-// picks it up.
+// The only extra work is kicking APNs registration so a token can be
+// minted on the very first cold start, before Dart asks for permission.
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -22,10 +21,6 @@ import WebKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate =
-        self as UNUserNotificationCenterDelegate
-    }
     application.registerForRemoteNotifications()
     OrbitWebKit.preferMobilePages()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -33,6 +28,17 @@ import WebKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NpdLog") {
+      FlutterMethodChannel(
+        name: "npd/log",
+        binaryMessenger: registrar.messenger()
+      ).setMethodCallHandler { call, result in
+        if call.method == "line", let line = call.arguments as? String {
+          NSLog("%@", line)
+        }
+        result(nil)
+      }
+    }
     DispatchQueue.main.async {
       UIApplication.shared.registerForRemoteNotifications()
     }

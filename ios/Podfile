@@ -36,14 +36,16 @@ target 'Runner' do
   end
 end
 
-# The notification service extension links Firebase Messaging so that
-# `Messaging.serviceExtension().populateNotificationContent(...)` can
-# register every delivered push with Firebase — otherwise
-# `getInitialMessage()` returns null on cold-start-after-wait taps.
+# OrbitPulseService (NSE) is intentionally NOT a CocoaPods Firebase
+# target. Bolt-of-Aether / FeatherfieldFrenzy do the same. Adding
+# `pod 'Firebase/Messaging'` here can collide with the firebase-ios-sdk
+# that firebase_messaging pulls into Runner and dies with
+# `Redefinition of module 'Firebase'`. Tap URL capture works fine
+# without it: cold-start taps arrive via SceneDelegate, warm taps via
+# FirebaseMessaging.onMessageOpenedApp.
 target 'OrbitPulseService' do
   use_frameworks!
   platform :ios, '15.0'
-  pod 'Firebase/Messaging', '12.18.0'
 end
 
 post_install do |installer|

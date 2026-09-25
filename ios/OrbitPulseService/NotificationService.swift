@@ -1,24 +1,19 @@
 import UserNotifications
 
-#if canImport(FirebaseMessaging)
-import FirebaseMessaging
-#endif
-
-/// Rich notification wrapper for Neon Plume Drop.
+/// Notification Service Extension.
 ///
-/// Every push MUST go through `Messaging.serviceExtension().populateNotificationContent`.
-/// That call registers the delivered notification with Firebase's
-/// tracking store so `getInitialMessage()` on the next cold-start tap
-/// actually returns the message. Without it the URL is lost after iOS
-/// evicts the app from memory (the "close app + wait + tap" symptom).
+/// Matches the proven Bolt-of-Aether / FeatherfieldFrenzy pattern:
+/// deliberately does NOT link Firebase Messaging here. Linking Firebase
+/// in the NSE produces `Redefinition of module 'Firebase'` when the
+/// Runner target pulls firebase-ios-sdk via SPM, and the "populate…"
+/// call is not required for tap URLs to reach Dart — cold-start taps
+/// arrive via `SceneDelegate.notificationResponse` and warm taps via
+/// `FirebaseMessaging.onMessageOpenedApp`, both entirely independent
+/// of what the NSE does.
 ///
-/// Firebase handles `fcm_options.image` for us. For pushes whose image
-/// URL lives under a custom key (`image_url`, `imageUrl`, `image`,
-/// `media-url`, `attachment-url` — including nested under `data`) we
-/// keep a fallback downloader so banners still show media.
-///
-/// Each `didReceive` captures its own state so two pushes handled on
-/// the same extension instance never clobber each other.
+/// This extension only enriches the banner with remote media. Each
+/// `didReceive` keeps its own state so two pushes handled on the same
+/// extension instance never clobber each other.
 final class NotificationService: UNNotificationServiceExtension {
   private var pending: [ObjectIdentifier: Pending] = [:]
 
@@ -41,65 +36,9 @@ final class NotificationService: UNNotificationServiceExtension {
     let record = Pending(once: once, draft: draft, task: nil)
     pending[key] = record
 
-    // Absolute ceiling — iOS gives ~30s but we prefer to hand the banner
-    // over fast. Deliver the current draft (with whatever Firebase and
-    // our fallback picture downloader completed by then).
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3.1) { [weak self] in
-      guard let self else { return }
-      guard let stalled = self.pending[key] else { return }
-      stalled.task?.cancel()
-      stalled.once.fire(stalled.draft)
-      self.pending.removeValue(forKey: key)
-    }
-
-    #if canImport(FirebaseMessaging)
-    Messaging.serviceExtension().populateNotificationContent(draft) { [weak self] enriched in
-      guard let self else { return }
-      let finalDraft = (enriched as? UNMutableNotificationContent) ?? draft
-      self.attachCustomPictureIfNeeded(
-        request: request,
-        draft: finalDraft,
-        record: record,
-        key: key
-      )
-    }
-    #else
-    attachCustomPictureIfNeeded(
-      request: request,
-      draft: draft,
-      record: record,
-      key: key
-    )
-    #endif
-  }
-
-  override func serviceExtensionTimeWillExpire() {
-    Self.log("timeWillExpire — flushing \(pending.count) pending push(es)")
-    for record in pending.values {
-      record.task?.cancel()
-      record.once.fire(record.draft)
-    }
-    pending.removeAll()
-  }
-
-  /// If Firebase already attached an image (via `fcm_options.image`) we
-  /// deliver immediately. Otherwise we run our fallback picture scan on
-  /// vendor keys and deliver once the download completes (or times out).
-  private func attachCustomPictureIfNeeded(
-    request: UNNotificationRequest,
-    draft: UNMutableNotificationContent,
-    record: Pending,
-    key: ObjectIdentifier
-  ) {
-    if !draft.attachments.isEmpty {
-      record.once.fire(draft)
-      pending.removeValue(forKey: key)
-      return
-    }
-
     guard let picture = Self.pictureURL(from: request.content.userInfo) else {
       Self.log("no picture url — delivering plain banner id=\(request.identifier)")
-      record.once.fire(draft)
+      once.fire(draft)
       pending.removeValue(forKey: key)
       return
     }
@@ -110,18 +49,35 @@ final class NotificationService: UNNotificationServiceExtension {
     config.waitsForConnectivity = false
     let session = URLSession(configuration: config)
     let task = session.downloadTask(with: picture) { [weak self] location, response, error in
-      guard let self else { return }
       if let error {
         Self.log("picture download failed: \(error.localizedDescription)")
       } else if let location {
         Self.pinPicture(location, response: response, source: picture, onto: draft)
         Self.log("picture attached id=\(request.identifier)")
       }
-      record.once.fire(draft)
-      self.pending.removeValue(forKey: key)
+      once.fire(draft)
+      self?.pending.removeValue(forKey: key)
     }
     record.task = task
     task.resume()
+
+    // Per-request 3.1s ceiling: iOS gives ~30s but we prefer to hand
+    // the banner over fast even if the CDN is slow. Never touches
+    // another push's state — everything is captured locally.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.1) { [weak self] in
+      task.cancel()
+      once.fire(draft)
+      self?.pending.removeValue(forKey: key)
+    }
+  }
+
+  override func serviceExtensionTimeWillExpire() {
+    Self.log("timeWillExpire — flushing \(pending.count) pending push(es)")
+    for record in pending.values {
+      record.task?.cancel()
+      record.once.fire(record.draft)
+    }
+    pending.removeAll()
   }
 
   private final class Pending {
@@ -205,9 +161,6 @@ final class NotificationService: UNNotificationServiceExtension {
     return "jpg"
   }
 
-  /// Prefix used by the reader — filter Xcode console with `[NPD.nse]`
-  /// to see every push APNs actually delivered to this device, whether
-  /// or not Flutter later saw it.
   private static func log(_ message: String) {
     NSLog("[NPD.nse] %@", message)
   }
