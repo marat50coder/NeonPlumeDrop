@@ -73,6 +73,14 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
     _openPortal(router, url);
   }
 
+  /// On resume we do ONE thing only — pick up a Universal Link / URL
+  /// scheme that iOS delivered while we were backgrounded. Everything
+  /// push-related is routed by `_dispatch` (live callback when the
+  /// portal is mounted, `_onBackgroundPushUrl` fallback when the user
+  /// was on the native game). Polling the vault or re-POSTing config
+  /// here would race with the portal that `_dispatch` just told to
+  /// navigate — the user saw that as a broken double-load / "flip
+  /// back to the first page".
   Future<void> _catchCampaign() async {
     final router = widget.router;
     if (router == null) return;
@@ -82,78 +90,13 @@ class _NeonPlumeDropAppState extends State<NeonPlumeDropApp>
       return;
     }
 
-    // Cold-start push tap that SceneDelegate wrote after resume (rare —
-    // usually the boot path picks it up first, but a resume-triggered
-    // scene reconnect can also land here). Push tap is always a
-    // destination, never campaign attribution.
-    final pushTap = await OrbitTapReader.consumePushTap();
-    if (pushTap != null && pushTap.isNotEmpty) {
-      await router.vault.saveLane(OrbitLane.portal);
-      _openPortal(router, pushTap);
-      return;
-    }
-
-    // Universal Link / URL scheme (may be a real OneLink → attribution).
     final tap = await OrbitTapReader.consume();
-    if (tap != null && tap.isNotEmpty) {
-      if (FlareRouter.isCampaignHost(tap)) {
-        router.attribution.ingestCampaignUrl(tap);
-      } else {
-        _openPortal(router, tap);
-        return;
-      }
+    if (tap == null || tap.isEmpty) return;
+    if (FlareRouter.isCampaignHost(tap)) {
+      router.attribution.ingestCampaignUrl(tap);
+    } else {
+      _openPortal(router, tap);
     }
-
-    // Background push tap via Firebase: `_dispatch` stashes the URL in
-    // the vault when `onMessageOpenedApp` fires. If we won the race
-    // (resume callback fired first), give it a short window to deliver.
-    // Never filter — push URLs are destinations even on OneLink.
-    final pushed = await _awaitBackgroundPushUrl(router);
-    if (pushed != null) {
-      await router.vault.saveLane(OrbitLane.portal);
-      _openPortal(router, pushed);
-      return;
-    }
-
-    // Gray WebView is already up. Re-POSTing config and pushing a new
-    // OrbitPortal reloads widget.url (the first partner page) and wipes
-    // whatever page the user had reached. Push taps are handled above.
-    if (router.vault.lane == OrbitLane.portal) return;
-    if (router.vault.lane == OrbitLane.open) return;
-
-    try {
-      await router.attribution.awaitSignals(
-        installTimeout: const Duration(seconds: 4),
-      );
-      final reply = await router.pullConfig();
-      if (reply.hasDestination) {
-        await router.vault.saveLane(OrbitLane.portal);
-        _openPortal(router, reply.url!);
-        return;
-      }
-      final fallback = router.campaignWebFallback();
-      if (fallback != null && fallback.isNotEmpty) {
-        await router.vault.saveLane(OrbitLane.portal);
-        _openPortal(router, fallback);
-      }
-    } catch (_) {}
-  }
-
-  /// Poll the vault for a push URL that `_dispatch` may still be about
-  /// to write. Immediate check first (zero delay), then up to ~900ms of
-  /// short retries — Firebase iOS delivers `onMessageOpenedApp` within a
-  /// few hundred ms of the tap-driven resume in practice. Cheap enough
-  /// to run on every resume and avoids opening the base config URL on
-  /// top of a push tap.
-  Future<String?> _awaitBackgroundPushUrl(FlareRouter router) async {
-    for (var attempt = 0; attempt < 6; attempt++) {
-      if (attempt > 0) {
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-      }
-      final url = await router.vault.consumePushUrl();
-      if (url != null && url.isNotEmpty) return url;
-    }
-    return null;
   }
 
   void _openPortal(FlareRouter router, String url) {
