@@ -47,8 +47,14 @@ app.*.map.json
 tool/npd_guard.recipe.json
 # Cargo build artefacts for the Rust guard.
 rust/npd_guard/target/
-# Firebase runtime config carries the real sender id + API key.
-ios/Runner/GoogleService-Info.plist
+# Android `google-services.json` DOES carry build-signing-adjacent
+# fields that must not leak into the public repo (Play Services client
+# IDs tied to the keystore, OAuth web client secret). The iOS
+# `GoogleService-Info.plist`, on the other hand, is baked into every
+# shipped IPA and the Firebase iOS SDK publishes all of its contents
+# at runtime, so hiding it here only breaks CI (`Build input file
+# cannot be found`) without adding any protection. Keep the Android
+# file ignored, keep the iOS one committed.
 android/app/google-services.json
 
 # Android Studio will place build artifacts here
