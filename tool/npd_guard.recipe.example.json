@@ -1,0 +1,26 @@
+{
+  "comment": [
+    "Copy this file to `tool/npd_guard.recipe.json` and fill every <...>",
+    "placeholder with the real value. `recipe.json` is gitignored; only",
+    "the sealed bytes that `tool/npd_pack.dart` emits into",
+    "`rust/npd_guard/src/sealed.rs` ever reach the repo.",
+    "",
+    "Every value listed here must be rotated per project — do NOT reuse",
+    "an endpoint, AppsFlyer key, or Firebase project number from any",
+    "shipped sibling. UA fragments can keep their canonical plaintext;",
+    "the Chrome / WebKit version strings are what rotate across apps."
+  ],
+  "endpoint": "<https://partner.example.com/config.php>",
+  "gcdBase": "https://gcdsdk.appsflyer.com/install_data/v5.0/",
+  "attributionKey": "<AppsFlyer dev key>",
+  "messagingProject": "<Firebase project number>",
+  "oneLinkHost": "<app subdomain>.onelink.me",
+  "uaProduct": "Mozilla/5.0",
+  "uaPlatformPrefix": "(iPhone; CPU iPhone OS",
+  "uaPlatformSuffix": "like Mac OS X)",
+  "uaEngine": "AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  "uaMobileToken": "Mobile/15E148",
+  "safariVersion": "18.7",
+  "safariTail": "604.1",
+  "jsOrbitShell": "<raw JS blob or file:/path/to/orbit_shell.js>"
+}

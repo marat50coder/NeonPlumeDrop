@@ -1,0 +1,49 @@
+[package]
+name = "npd_guard"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# Shared-object / static-library name = `libnpd_guard`. The only thing
+# a device-side analyst sees via `nm` or `otool -L` on the Runner
+# binary is this crate's `_ng_*` symbols — rotated per project to
+# avoid clustering with sibling guards (see .cursor rules).
+
+[lib]
+name = "npd_guard"
+# Both forms so the same crate can ship:
+#   • cdylib   — Android `libnpd_guard.so` loaded via DynamicLibrary.open
+#   • staticlib — iOS `libnpd_guard.a` folded into the Runner binary and
+#     resolved via DynamicLibrary.process()
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+# Compile-time string / byte obfuscation. Every sealed array is wrapped
+# in `obfbytes!` so a bulk `strings libnpd_guard.a` scan never shows the
+# payload as a contiguous run.
+obfstr = "0.4"
+
+# Blocking HTTPS from inside the library — Dart hands us the body + UA,
+# we POST the partner `config.php` without the endpoint ever appearing
+# in the Dart AOT snapshot.
+ureq = { version = "2.9", default-features = false, features = ["tls", "json"] }
+
+# Everything below pulled only for the HTTPS roundtrip (parse-free; we
+# treat the response as an opaque UTF-8 string).
+
+[profile.release]
+# "z" — smallest binary, hardest to decompile.
+opt-level = "z"
+# Cross-crate inlining so obfstr's keystream expansions get folded into
+# the call sites.
+lto = "fat"
+# One IR unit so LTO can see the whole graph.
+codegen-units = 1
+# No unwinding tables, no formatter.
+panic = "abort"
+# No locals in the symbol table.
+strip = "symbols"
+# Removes guard code the LCG otherwise emits (which reads as readable
+# constants in a decompiler).
+overflow-checks = false
+debug = false
+incremental = false

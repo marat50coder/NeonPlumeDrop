@@ -44,9 +44,9 @@ class PlumeVault {
       // Partner sometimes stamps `expires` seconds — not days — after
       // the request (observed `expires - now ≈ 30 s`). That makes the
       // Keychain cache useless on the very next cold start and forces
-      // every returning launch back through AF + config.php. Clamp the
-      // expiry upward to our own floor so the cache survives at least
-      // one offline / flaky boot.
+      // every returning launch back through AF + the partner endpoint.
+      // Clamp the expiry upward to our own floor so the cache survives
+      // at least one offline / flaky boot.
       final floor = now + FlareConfig.savedUrlExpiryDays * 24 * 60 * 60;
       final expiry = expiresAt == null || expiresAt < floor
           ? floor

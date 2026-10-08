@@ -39,6 +39,18 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# ─── npd_guard — sealed-value pipeline ────────────────────────
+# Recipe carries the raw endpoint URL / AppsFlyer dev key /
+# Firebase project number. Only the sealed byte arrays that
+# `tool/npd_pack.dart` emits into `rust/npd_guard/src/sealed.rs`
+# ever land in the repo.
+tool/npd_guard.recipe.json
+# Cargo build artefacts for the Rust guard.
+rust/npd_guard/target/
+# Firebase runtime config carries the real sender id + API key.
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile

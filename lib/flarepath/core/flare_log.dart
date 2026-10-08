@@ -1,17 +1,14 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
-const MethodChannel _nativeLog = MethodChannel('npd/log');
-
+/// Debug-only trace. The `assert` is stripped from `--release`
+/// builds, so no `[NPD.*]` line — in particular nothing that
+/// contains the endpoint URL, AppsFlyer dev key, Firebase project
+/// number, push token or the config body — ever reaches logcat /
+/// Console.app on a shipped build. See FINAL_CHECKLIST Part G
+/// (log leaks are a release blocker).
 void flareTrace(String Function() build) {
-  // Release `flutter run` over Wi-Fi does not forward debugPrint.
-  // print() + NSLog (via the native channel) is what actually shows up.
-  final line = build();
-  print(line);
-  debugPrint(line);
-  unawaited(
-    _nativeLog.invokeMethod<void>('line', line).catchError((_) => null),
-  );
+  assert(() {
+    debugPrint(build());
+    return true;
+  }());
 }

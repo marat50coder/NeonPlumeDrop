@@ -213,7 +213,7 @@ class OrbitAttribution {
   }
 
   /// Drop AF placeholders and copy OneLink aliases (pid → media_source,
-  /// c → campaign) so config.php sees the same keys the dashboard uses.
+  /// c → campaign) so the backend sees the same keys the dashboard uses.
   Map<String, dynamic> _normalize(Map<String, dynamic> raw) {
     final out = <String, dynamic>{};
     raw.forEach((key, value) {
@@ -424,7 +424,7 @@ class OrbitAttribution {
         }
       } catch (_) {}
     }
-    flareTrace(() => '[NPD.ORBIT] payload ${jsonEncode(body)}');
+    flareTrace(() => '[NPD.ORBIT] payload keys=${body.keys.toList()}');
     return body;
   }
 

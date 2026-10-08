@@ -19,6 +19,7 @@
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		7884E86A2EC3CC0700C636F3 /* PushCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8692EC3CC0400C636F3 /* PushCapture.swift */; };
+		7884E86C2EC3CC0700C636F4 /* NpdGuardAnchor.m in Sources */ = {isa = PBXBuildFile; fileRef = 7884E86B2EC3CC0400C636F4 /* NpdGuardAnchor.m */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -84,6 +85,7 @@
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		7884E8692EC3CC0400C636F3 /* PushCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushCapture.swift; sourceTree = "<group>"; };
+		7884E86B2EC3CC0400C636F4 /* NpdGuardAnchor.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = NpdGuardAnchor.m; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
 		79602766D33D8E1FF81ACBD8 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		79C8AFF3CE07434E8556950D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				7884E8692EC3CC0400C636F3 /* PushCapture.swift */,
+				7884E86B2EC3CC0400C636F4 /* NpdGuardAnchor.m */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				8082C7908DC2F9C65AE43491 /* GoogleService-Info.plist */,
 				79C8AFF3CE07434E8556950D /* PrivacyInfo.xcprivacy */,
@@ -525,6 +528,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				7884E86A2EC3CC0700C636F3 /* PushCapture.swift in Sources */,
+				7884E86C2EC3CC0700C636F4 /* NpdGuardAnchor.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -653,7 +657,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.neonplumedrop.neonplumedropgame.RunnerTests;
@@ -671,7 +675,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.neonplumedrop.neonplumedropgame.RunnerTests;
@@ -687,7 +691,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.neonplumedrop.neonplumedropgame.RunnerTests;
@@ -702,7 +706,7 @@
 			baseConfigurationReference = 6EC9018613964CCF1CFB3104 /* Pods-OrbitPulseService.release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L6C2DFLMGM;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = OrbitPulseService/Info.plist;
@@ -727,7 +731,7 @@
 			baseConfigurationReference = A5F30FFFE8D4D6F261FF4630 /* Pods-OrbitPulseService.debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L6C2DFLMGM;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = OrbitPulseService/Info.plist;
@@ -913,7 +917,7 @@
 			baseConfigurationReference = 356A99903349CF4DC0243907 /* Pods-OrbitPulseService.profile.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L6C2DFLMGM;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = OrbitPulseService/Info.plist;

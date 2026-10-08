@@ -40,7 +40,8 @@ class FlareRouter {
 
   /// Firebase re-issues the same push token 2-4× per cold start (APNs
   /// handshake, MessagingHub cache refresh, provisional prompt). Each
-  /// `onTokenRefresh` was POSTing an identical body to `config.php`,
+  /// `onTokenRefresh` was POSTing an identical body to the partner
+  /// endpoint, which the native guard owns,
   /// so a single install produced 5+ `[NPD.XCHG] response` lines and
   /// wasted the partner's rate budget. Guard against replays.
   String? _lastPostedToken;

@@ -15,7 +15,6 @@ import 'flarepath/infra/skyline_probe.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  print('[NPD.BOOT] dart console alive');
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -30,10 +29,7 @@ Future<void> main() async {
   await OrientationController.allowAll();
 
   flareTrace(
-    () => '[NPD.BOOT] credentialsReady=${FlareConfig.grayCredentialsReady} '
-        'endpoint=${FlareConfig.endpoint} '
-        'afKeyLen=${FlareConfig.appsFlyerKey.length} '
-        'fbNum=${FlareConfig.firebaseProjectNumber}',
+    () => '[NPD.BOOT] credentialsReady=${FlareConfig.grayCredentialsReady}',
   );
 
   final vault = PlumeVault();
